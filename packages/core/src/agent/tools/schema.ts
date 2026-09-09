@@ -18,7 +18,8 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Read a file. Returns content and hash for later writes.",
+      description:
+        "Read a file. Returns content and hash for later writes. Prefer startLine/endLine for large files. In thrift mode, full reads over the line threshold return an outline instead of body (except files you wrote this turn).",
       parameters: {
         type: "object",
         properties: {
@@ -58,6 +59,25 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
           expectedHash: { type: "string" },
         },
         required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "edit_file",
+      description:
+        "Edit a file by replacing a specific string segment. Pass expectedHash from the last read to detect concurrent changes. By default oldString must be unique; set replaceAll to replace every occurrence.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          oldString: { type: "string", description: "The exact text to find (must match verbatim, including whitespace)." },
+          newString: { type: "string", description: "The replacement text." },
+          expectedHash: { type: "string" },
+          replaceAll: { type: "boolean", description: "Replace every occurrence instead of requiring uniqueness." },
+        },
+        required: ["path", "oldString", "newString"],
       },
     },
   },

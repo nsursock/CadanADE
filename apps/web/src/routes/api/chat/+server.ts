@@ -19,6 +19,12 @@ export const POST: RequestHandler = async ({ request }) => {
     return Response.json({ ok: true });
   }
 
+  if (body.action === "reset") {
+    chatModel.clear();
+    const session = agentRuntime.resetSession();
+    return Response.json({ ok: true, sessionId: session.id });
+  }
+
   const text = String(body.text ?? "").trim();
   if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
 
@@ -76,6 +82,9 @@ function applyLocal(ev: AgentEvent) {
   switch (ev.type) {
     case "text.delta":
       chatModel.appendText(String(ev.data?.text ?? ""));
+      break;
+    case "reasoning.delta":
+      chatModel.appendReasoning(String(ev.data?.text ?? ""));
       break;
     case "status":
       chatModel.setStatus(String(ev.data?.message ?? ""));

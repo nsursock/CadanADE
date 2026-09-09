@@ -12,6 +12,9 @@
     appState.threeBackground = s.threeBackground;
     appState.perfLite = s.perfLite;
     appState.selectedModelId = s.selectedModelId || "openrouter/free";
+    appState.workerModelId = s.workerModelId || "openrouter/free";
+    appState.agentMode = s.agentMode === "thrift" ? "thrift" : "normal";
+    appState.chatDisplayMode = s.chatDisplayMode === "verbose" ? "verbose" : "compact";
     document.documentElement.dataset.theme = s.themeId;
     document.documentElement.classList.toggle("perf-lite", s.perfLite);
 
@@ -23,12 +26,18 @@
         apiKey: s.openrouterApiKey || undefined,
         baseUrl: s.providerBaseUrl || undefined,
         model: s.selectedModelId || "openrouter/free",
+        workerModel: s.workerModelId || "openrouter/free",
+        agentMode: s.agentMode === "thrift" ? "thrift" : "normal",
       }),
     })
       .then((r) => r.json())
       .then((data) => {
         appState.hasProviderKey = Boolean(data.hasKey);
         if (data.model) appState.selectedModelId = data.model;
+        if (data.workerModel) appState.workerModelId = data.workerModel;
+        if (data.agentMode === "thrift" || data.agentMode === "normal") {
+          appState.agentMode = data.agentMode;
+        }
       })
       .catch(() => {
         /* ignore */

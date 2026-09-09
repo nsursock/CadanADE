@@ -1,5 +1,15 @@
 /** Browser-safe exports only — no node: modules. */
-export type { ThemeId, AppMode, TreeNode, OpenTab, ChatMessage, FilePayload, ToolCallCard } from "./types.js";
+export type {
+  ThemeId,
+  AppMode,
+  TreeNode,
+  OpenTab,
+  ChatMessage,
+  ChatPart,
+  ChatDisplayMode,
+  FilePayload,
+  ToolCallCard,
+} from "./types.js";
 export { THEME_IDS, DEFAULT_THEME } from "./types.js";
 
 export { ThemeModel } from "./models/theme-model.js";
@@ -12,7 +22,7 @@ export { ChatController } from "./controllers/chat-controller.js";
 
 export type { AgentEvent, AgentEventType } from "./agent/events.js";
 
-export type { CadanSettings } from "./settings/index.js";
+export type { CadanSettings, AgentMode } from "./settings/index.js";
 export {
   DEFAULT_SETTINGS,
   SETTINGS_STORAGE_KEY,
@@ -20,4 +30,6 @@ export {
   loadSettings,
   saveSettings,
   patchSettings,
+  AGENT_MODES,
+  CHAT_DISPLAY_MODES,
 } from "./settings/index.js";

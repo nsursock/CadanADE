@@ -1,5 +1,6 @@
 export type AgentEventType =
   | "text.delta"
+  | "reasoning.delta"
   | "status"
   | "tool.start"
   | "tool.args"

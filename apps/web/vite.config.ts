@@ -1,9 +1,14 @@
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  envDir: repoRoot,
   server: {
     fs: {
       allow: ["../..", "../../../ScifiUI"],

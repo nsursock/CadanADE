@@ -8,7 +8,9 @@
     "desktop:dev": "pnpm --filter @cadan/desktop dev",
     "desktop:build": "pnpm --filter @cadan/desktop build",
     "build": "pnpm -r run build",
-    "check": "pnpm -r run check"
+    "check": "pnpm -r run check",
+    "ab:agent": "node apps/web/scripts/ab-agent.mjs",
+    "smoke:ui": "pnpm --filter @cadan/web smoke:ui"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

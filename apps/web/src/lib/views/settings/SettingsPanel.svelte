@@ -31,6 +31,9 @@
     appState.threeBackground = DEFAULT_SETTINGS.threeBackground;
     appState.perfLite = DEFAULT_SETTINGS.perfLite;
     appState.selectedModelId = DEFAULT_SETTINGS.selectedModelId;
+    appState.workerModelId = DEFAULT_SETTINGS.workerModelId;
+    appState.agentMode = DEFAULT_SETTINGS.agentMode;
+    appState.chatDisplayMode = DEFAULT_SETTINGS.chatDisplayMode;
     document.documentElement.dataset.theme = DEFAULT_SETTINGS.themeId;
     document.documentElement.classList.toggle("perf-lite", DEFAULT_SETTINGS.perfLite);
     void fetch("/api/settings", {
@@ -40,6 +43,8 @@
         apiKey: "",
         baseUrl: DEFAULT_SETTINGS.providerBaseUrl,
         model: DEFAULT_SETTINGS.selectedModelId,
+        workerModel: DEFAULT_SETTINGS.workerModelId,
+        agentMode: DEFAULT_SETTINGS.agentMode,
       }),
     });
     appState.showToast("Defaults restored", "info");

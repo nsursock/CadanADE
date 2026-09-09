@@ -42,3 +42,11 @@ apps/desktop/release/
 # Misc
 *.local
 .direnv/
+
+# A/B harness outputs & Playwright
+ab-results/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+apps/web/playwright/.cache/
+

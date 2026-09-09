@@ -4,13 +4,21 @@
   import IconEyeOff from "@tabler/icons-svelte/icons/eye-off";
   import IconCheck from "@tabler/icons-svelte/icons/check";
   import IconRefresh from "@tabler/icons-svelte/icons/refresh";
-  import { DEFAULT_SETTINGS, loadSettings, patchSettings } from "@cadan/core";
+  import IconRoute from "@tabler/icons-svelte/icons/route";
+  import {
+    DEFAULT_SETTINGS,
+    loadSettings,
+    patchSettings,
+    type AgentMode,
+  } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
   import Tooltip from "../Tooltip.svelte";
 
   let apiKey = $state("");
   let baseUrl = $state(DEFAULT_SETTINGS.providerBaseUrl);
   let model = $state(DEFAULT_SETTINGS.selectedModelId);
+  let workerModel = $state(DEFAULT_SETTINGS.workerModelId);
+  let agentMode = $state<AgentMode>(DEFAULT_SETTINGS.agentMode);
   let showKey = $state(false);
   let saving = $state(false);
   let saved = $state(false);
@@ -26,6 +34,8 @@
     apiKey = s.openrouterApiKey;
     baseUrl = s.providerBaseUrl;
     model = s.selectedModelId || DEFAULT_SETTINGS.selectedModelId;
+    workerModel = s.workerModelId || DEFAULT_SETTINGS.workerModelId;
+    agentMode = s.agentMode === "thrift" ? "thrift" : "normal";
     void hydrateServer();
   });
 
@@ -35,6 +45,8 @@
       const data = await res.json();
       if (data.baseUrl) baseUrl = data.baseUrl;
       if (data.model) model = data.model;
+      if (data.workerModel) workerModel = data.workerModel;
+      if (data.agentMode === "thrift" || data.agentMode === "normal") agentMode = data.agentMode;
       keyHint = data.keyHint ?? null;
       hasKey = Boolean(data.hasKey);
       if (hasKey) void loadModels();
@@ -58,26 +70,55 @@
     }
   }
 
+  async function pushAgentRouting(nextMode: AgentMode, nextWorker: string) {
+    patchSettings({ agentMode: nextMode, workerModelId: nextWorker });
+    appState.agentMode = nextMode;
+    appState.workerModelId = nextWorker;
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentMode: nextMode, workerModel: nextWorker }),
+    });
+  }
+
+  async function setMode(next: AgentMode) {
+    agentMode = next;
+    await pushAgentRouting(next, workerModel.trim() || DEFAULT_SETTINGS.workerModelId);
+    appState.showToast(next === "thrift" ? "Thrift mode on" : "Normal mode on", "info");
+  }
+
   async function saveProvider() {
     saving = true;
     error = null;
     saved = false;
     try {
       const nextModel = model.trim() || DEFAULT_SETTINGS.selectedModelId;
+      const nextWorker = workerModel.trim() || DEFAULT_SETTINGS.workerModelId;
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey, baseUrl, model: nextModel }),
+        body: JSON.stringify({
+          apiKey,
+          baseUrl,
+          model: nextModel,
+          workerModel: nextWorker,
+          agentMode,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
       model = nextModel;
+      workerModel = nextWorker;
       patchSettings({
         openrouterApiKey: apiKey,
         providerBaseUrl: baseUrl,
         selectedModelId: nextModel,
+        workerModelId: nextWorker,
+        agentMode,
       });
       appState.selectedModelId = nextModel;
+      appState.workerModelId = nextWorker;
+      appState.agentMode = agentMode;
       appState.hasProviderKey = Boolean(data.hasKey);
       hasKey = Boolean(data.hasKey);
       keyHint = data.keyHint ?? null;
@@ -100,6 +141,77 @@
 </script>
 
 <section class="space-y-5">
+  <div>
+    <div class="flex items-center gap-2 mb-1">
+      <IconRoute size={16} stroke={1.75} class="text-scifi-primary" />
+      <h3 class="pane-title !normal-case !tracking-normal !text-sm"><span class="pane-title-bar"></span> Agent routing</h3>
+    </div>
+    <p class="text-xs text-scifi-muted mb-3">
+      Compare spend: Normal dumps full files into context; Thrift blocks oversized reads and returns outlines (optional cheap worker).
+      Each chat is tagged on OpenRouter as <code class="text-[0.65rem]">cadan:normal|thrift:&lt;session&gt;</code> for Activity A/B.
+    </p>
+
+    <div class="join w-full mb-3">
+      <button
+        type="button"
+        class="btn btn-sm flex-1"
+        class:btn-primary={agentMode === "normal"}
+        class:btn-ghost={agentMode !== "normal"}
+        onclick={() => setMode("normal")}
+      >
+        Normal
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm flex-1"
+        class:btn-primary={agentMode === "thrift"}
+        class:btn-ghost={agentMode !== "thrift"}
+        onclick={() => setMode("thrift")}
+      >
+        Thrift
+      </button>
+    </div>
+
+    {#if agentMode === "thrift"}
+      <label class="block mb-1">
+        <span class="label-kicker block mb-1">Worker model</span>
+        {#if hasKey}
+          <select
+            class="select font-mono text-xs"
+            bind:value={workerModel}
+            onchange={() => pushAgentRouting("thrift", workerModel.trim() || DEFAULT_SETTINGS.workerModelId)}
+          >
+            <optgroup label="Routers">
+              <option value="openrouter/free">openrouter/free</option>
+              <option value="openrouter/auto">openrouter/auto</option>
+            </optgroup>
+            {#if free.length}
+              <optgroup label="Free">
+                {#each free.filter((m) => !m.id.startsWith("openrouter/")) as m}
+                  <option value={m.id}>{m.id}</option>
+                {/each}
+              </optgroup>
+            {/if}
+            {#if paid.length}
+              <optgroup label="Paid">
+                {#each paid.filter((m) => !m.id.startsWith("openrouter/")) as m}
+                  <option value={m.id}>{m.id}</option>
+                {/each}
+              </optgroup>
+            {/if}
+          </select>
+        {:else}
+          <input class="input font-mono text-xs" bind:value={workerModel} />
+        {/if}
+      </label>
+      <p class="text-[0.65rem] text-scifi-muted">
+        Reads over ~350 lines return an outline only. Worker summarizes when available; otherwise a local outline is used.
+      </p>
+    {/if}
+  </div>
+
+  <div class="divider">provider</div>
+
   <div>
     <div class="flex items-center gap-2 mb-1">
       <IconKey size={16} stroke={1.75} class="text-scifi-primary" />
@@ -137,7 +249,7 @@
     </label>
 
     <label class="block mb-3">
-      <span class="label-kicker block mb-1">Model</span>
+      <span class="label-kicker block mb-1">Frontier model</span>
       {#if hasKey}
         <div class="flex gap-2">
           <select class="select flex-1 font-mono text-xs" bind:value={model}>

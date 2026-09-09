@@ -1,0 +1,7 @@
+Create 3 algo files (ppo.py, sac.py, td3.py) with a Stable-Baselines3-like API (at least class Algo with learn(total_timesteps) and predict(obs)).
+Also create cartpole.py and pendulum.py with a Gymnasium-like API (reset/step/render stubs ok).
+Everything must run on Apple MLX (use mlx.core / mlx.nn; vectorize where sensible; mx.compile on hot paths).
+Test PPO with cartpole.py and SAC + TD3 with pendulum.py.
+Emit TensorBoard-compatible CSV metrics (step,reward,loss columns at minimum).
+Use Gymnasium solve criteria as the target for each env (CartPole-v1: avg return ≥ 475 over 100 eps; Pendulum-v1: avg return ≥ -200 over 100 eps — document in README.md).
+Keep the workspace small and self-contained. Do not ask clarifying questions — implement and leave the files on disk.
