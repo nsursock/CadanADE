@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@plugin "@scifiui/core";
+@import "@scifiui/core/index.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/jetbrains-mono/800.css";
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--scifi-bg);
+  color: var(--scifi-text);
+  font-family: var(--scifi-font);
+}
+
+.cm-editor {
+  height: 100%;
+  font-size: 0.8125rem;
+  background: transparent !important;
+}
+.cm-editor .cm-scroller {
+  font-family: var(--scifi-font);
+}
+.cm-editor.cm-focused {
+  outline: none;
+}

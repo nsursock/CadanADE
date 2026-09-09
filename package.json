@@ -1,0 +1,20 @@
+{
+  "name": "cadan-ade",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @cadan/web dev",
+    "desktop:dev": "pnpm --filter @cadan/desktop dev",
+    "desktop:build": "pnpm --filter @cadan/desktop build",
+    "build": "pnpm -r run build",
+    "check": "pnpm -r run check"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

@@ -1,0 +1,22 @@
+<script lang="ts">
+  import { appState } from "$lib/state.svelte";
+</script>
+
+<footer class="status-bar shrink-0" data-enter>
+  <div class="status-bar-section">
+    {#if appState.workspaceRoot}
+      <span class="status-bar-item"><strong>{appState.workspaceRoot.split("/").pop()}</strong></span>
+      <span class="status-chip"><span class="dot"></span> linked</span>
+    {:else}
+      <span class="status-bar-item">No workspace</span>
+    {/if}
+    {#if appState.activeTab}
+      <span class="status-bar-item">{appState.activeTab.path}{appState.activeTab.dirty ? " •" : ""}</span>
+    {/if}
+  </div>
+    <div class="status-bar-section">
+      <span class="status-bar-item">{appState.selectedModelId.split("/").pop()}</span>
+      <span class="status-bar-item">{appState.themeId}</span>
+      <span class="status-bar-item">{appState.tabs.length} tabs</span>
+    </div>
+</footer>

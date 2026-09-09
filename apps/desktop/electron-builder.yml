@@ -1,0 +1,42 @@
+appId: ai.cadan.ade
+productName: CadanADE
+copyright: Copyright © 2026 Cadan
+
+directories:
+  output: release
+  buildResources: build
+
+extraResources:
+  - from: ../web/build
+    to: server
+    filter: ["**/*"]
+
+files:
+  - dist/**/*
+  - package.json
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+win:
+  target:
+    - nsis
+    - portable
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+publish: null

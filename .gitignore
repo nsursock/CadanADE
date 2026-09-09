@@ -1,0 +1,44 @@
+# Dependencies & builds
+node_modules/
+.pnpm-store/
+dist/
+build/
+release/
+.svelte-kit/
+.vite/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs & caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.turbo/
+.cache/
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Electron
+apps/desktop/dist/
+apps/desktop/release/
+*.dmg
+*.AppImage
+*.exe
+
+# Misc
+*.local
+.direnv/

@@ -1,0 +1,27 @@
+{
+  "name": "@cadan/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CadanADE desktop app (Electron wrapper around @cadan/web)",
+  "main": "dist/main.js",
+  "scripts": {
+    "postinstall": "node ./scripts/ensure-electron.js",
+    "electron:repair": "node ./scripts/ensure-electron.js",
+    "dev": "concurrently -n server,electron -c blue,magenta \"pnpm --filter @cadan/web dev\" \"wait-on tcp:5175 && tsc && bash scripts/launch.sh\"",
+    "dev:electron": "tsc && bash scripts/launch.sh",
+    "build:web": "pnpm --filter @cadan/web build",
+    "build": "pnpm run build:web && tsc && electron-builder",
+    "build:mac": "pnpm run build:web && tsc && electron-builder --mac",
+    "build:win": "pnpm run build:web && tsc && electron-builder --win",
+    "build:linux": "pnpm run build:web && tsc && electron-builder --linux",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "concurrently": "^9.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0",
+    "typescript": "^5.7.0",
+    "wait-on": "^8.0.0"
+  }
+}
