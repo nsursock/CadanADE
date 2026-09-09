@@ -27,6 +27,13 @@
     return v || fallback;
   }
 
+  function forceTransparentBg() {
+    if (!host) return;
+    for (const el of host.querySelectorAll<HTMLElement>(".xterm, .xterm > div, .xterm-viewport, .xterm-screen, .xterm-rows")) {
+      el.style.backgroundColor = "transparent";
+    }
+  }
+
   function themeTokens() {
     const primary = cssVar("--scifi-primary", "#ff2e9a");
     const success = cssVar("--scifi-success", "#69f0ae");
@@ -35,7 +42,7 @@
     const muted = cssVar("--scifi-muted", "#7a6aa8");
     const selectionRgb = cssVar("--scifi-primary-rgb", "255, 46, 154");
     return {
-      background: "transparent",
+      background: "rgba(0,0,0,0)",
       foreground: text,
       cursor: primary,
       cursorAccent: cssVar("--scifi-bg", "#050010"),
@@ -110,6 +117,7 @@
       });
       term.loadAddon(fit);
       term.open(host);
+      forceTransparentBg();
       try {
         fit.fit();
       } catch {
@@ -124,6 +132,7 @@
         if (!fit || !term || !termId) return;
         try {
           fit.fit();
+          forceTransparentBg();
           window.cadan?.terminalResize(termId, term.cols, term.rows);
         } catch {
           /* transient */
@@ -152,6 +161,7 @@
     queueMicrotask(() => {
       try {
         fit?.fit();
+        forceTransparentBg();
         if (termId && term && window.cadan) {
           window.cadan.terminalResize(termId, term.cols, term.rows);
         }
@@ -221,11 +231,14 @@
     padding: 4px 0;
   }
   :global(.terminal-host .xterm .xterm-screen) {
-    background: transparent;
+    background: transparent !important;
   }
   :global(.terminal-host .xterm-viewport) {
     scrollbar-width: thin;
-    background: transparent;
+    background-color: transparent !important;
+  }
+  :global(.terminal-host .xterm .composition-view) {
+    background: transparent !important;
   }
   :global(.terminal-host .xterm .xterm-rows) {
     font-feature-settings: "calt" 0;
