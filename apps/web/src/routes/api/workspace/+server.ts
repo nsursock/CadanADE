@@ -58,6 +58,38 @@ export const POST: RequestHandler = async ({ request }) => {
     ]);
     return json({ candidates, recent, defaultProjectDir });
   }
+  if (action === "delete") {
+    try {
+      const tree = await workspaceController.delete(String(body.path ?? ""));
+      return json({ ok: true, tree });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Delete failed" }, { status: 400 });
+    }
+  }
+  if (action === "reveal") {
+    try {
+      await workspaceController.reveal(String(body.path ?? ""));
+      return json({ ok: true });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Reveal failed" }, { status: 400 });
+    }
+  }
+  if (action === "openWith") {
+    try {
+      await workspaceController.openWith(String(body.path ?? ""));
+      return json({ ok: true });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Open with failed" }, { status: 400 });
+    }
+  }
+  if (action === "rename") {
+    try {
+      const tree = await workspaceController.rename(String(body.path ?? ""), String(body.name ?? ""));
+      return json({ ok: true, tree });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Rename failed" }, { status: 400 });
+    }
+  }
 
   return json({ error: "Unknown action" }, { status: 400 });
 };

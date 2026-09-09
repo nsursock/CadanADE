@@ -97,6 +97,33 @@ export class WorkspaceService {
     return { path: rel, content, hash: this.hash(content) };
   }
 
+  async editFile(
+    root: string,
+    rel: string,
+    oldString: string,
+    newString: string,
+    expectedHash?: string,
+    replaceAll = false,
+  ) {
+    const abs = this.assertInside(root, rel);
+    const current = await fs.readFile(abs, "utf8");
+    if (expectedHash) {
+      const hash = this.hash(current);
+      if (hash !== expectedHash) throw new Error("File changed on disk (hash mismatch)");
+    }
+    if (oldString === newString) throw new Error("oldString and newString are identical");
+    const occurrences = current.split(oldString).length - 1;
+    if (occurrences === 0) throw new Error("oldString not found in file");
+    if (occurrences > 1 && !replaceAll) {
+      throw new Error(`oldString appears ${occurrences} times — set replaceAll to replace every occurrence, or make oldString more specific`);
+    }
+    const updated = replaceAll
+      ? current.split(oldString).join(newString)
+      : current.replace(oldString, newString);
+    await fs.writeFile(abs, updated, "utf8");
+    return { path: rel, hash: this.hash(updated), bytes: updated.length, replacements: occurrences };
+  }
+
   async deleteFile(root: string, rel: string) {
     const abs = this.assertInside(root, rel);
     await fs.unlink(abs);
@@ -167,5 +194,62 @@ export class WorkspaceService {
     } catch {
       return false;
     }
+  }
+
+  async deletePath(root: string, rel: string) {
+    const abs = this.assertInside(root, rel);
+    const st = await fs.stat(abs);
+    if (st.isDirectory()) {
+      await fs.rm(abs, { recursive: true });
+    } else {
+      await fs.unlink(abs);
+    }
+    return { deleted: rel };
+  }
+
+  async revealPath(root: string, rel: string) {
+    const abs = this.assertInside(root, rel);
+    const platform = process.platform;
+    if (platform === "darwin") {
+      spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
+    } else if (platform === "win32") {
+      spawn("explorer", ["/select,", abs], { detached: true, shell: true, stdio: "ignore" }).unref();
+    } else {
+      const dir = (await fs.stat(abs)).isDirectory() ? abs : path.dirname(abs);
+      spawn("xdg-open", [dir], { detached: true, stdio: "ignore" }).unref();
+    }
+    return { revealed: rel };
+  }
+
+  async openWith(root: string, rel: string) {
+    const abs = this.assertInside(root, rel);
+    const platform = process.platform;
+    if (platform === "darwin") {
+      spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
+    } else if (platform === "win32") {
+      spawn("start", ["", abs], { detached: true, shell: true, stdio: "ignore" }).unref();
+    } else {
+      spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
+    }
+    return { opened: rel };
+  }
+
+  async renamePath(root: string, oldRel: string, newName: string) {
+    const resolvedRoot = path.resolve(root);
+    const oldAbs = this.assertInside(root, oldRel);
+    const dir = path.dirname(oldAbs);
+    const newAbs = path.resolve(dir, newName);
+    if (newAbs !== resolvedRoot && !newAbs.startsWith(resolvedRoot + path.sep)) {
+      throw new Error("New path escapes workspace root");
+    }
+    if (oldAbs === newAbs) throw new Error("New name is the same");
+    try {
+      await fs.access(newAbs);
+      throw new Error("A file with this name already exists");
+    } catch (e) {
+      if ((e as Error).message === "A file with this name already exists") throw e;
+    }
+    await fs.rename(oldAbs, newAbs);
+    return { oldPath: oldRel, newPath: path.relative(resolvedRoot, newAbs) };
   }
 }

@@ -35,6 +35,28 @@ export class WorkspaceController {
     return tree;
   }
 
+  async delete(relPath: string) {
+    if (!this.model.root) throw new Error("No workspace open");
+    await this.service.deletePath(this.model.root, relPath);
+    return this.refresh();
+  }
+
+  async reveal(relPath: string) {
+    if (!this.model.root) throw new Error("No workspace open");
+    await this.service.revealPath(this.model.root, relPath);
+  }
+
+  async openWith(relPath: string) {
+    if (!this.model.root) throw new Error("No workspace open");
+    await this.service.openWith(this.model.root, relPath);
+  }
+
+  async rename(relPath: string, newName: string) {
+    if (!this.model.root) throw new Error("No workspace open");
+    await this.service.renamePath(this.model.root, relPath, newName);
+    return this.refresh();
+  }
+
   close() {
     this.model.setRoot(null);
   }

@@ -21,6 +21,12 @@
   let visible = $state(false);
   let coords = $state({ left: -9999, top: -9999 });
 
+  /** Move the bubble to <body> so it escapes ancestor stacking contexts (e.g. .pane backdrop-filter). */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy: () => node.remove() };
+  }
+
   const PAD = 8;
   const GAP = 6;
 
@@ -125,6 +131,7 @@
       class="smart-tip-bubble"
       class:show={showing}
       bind:this={tipEl}
+      use:portal
       style:left="{coords.left}px"
       style:top="{coords.top}px"
       role="tooltip"
