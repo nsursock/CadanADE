@@ -18,6 +18,26 @@ const api = {
     return () => ipcRenderer.removeListener("workspace:opened", handler);
   },
 
+  terminalSpawn: (opts?: { cwd?: string; cols?: number; rows?: number }) =>
+    ipcRenderer.invoke("terminal:spawn", opts ?? {}),
+  terminalInput: (id: string, data: string) =>
+    ipcRenderer.send("terminal:input", id, data),
+  terminalResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send("terminal:resize", id, cols, rows),
+  terminalDispose: (id: string) => ipcRenderer.send("terminal:dispose", id),
+  onTerminalData: (id: string, callback: (data: string) => void) => {
+    const channel = `terminal:data:${id}`;
+    const handler = (_event: unknown, data: string) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+  onTerminalExit: (id: string, callback: (exitCode: number) => void) => {
+    const channel = `terminal:exit:${id}`;
+    const handler = (_event: unknown, exitCode: number) => callback(exitCode);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
   platform: process.platform as NodeJS.Platform,
 };
 

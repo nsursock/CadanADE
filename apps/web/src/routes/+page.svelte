@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import IconTerminal from "@tabler/icons-svelte/icons/terminal";
   import AppChrome from "$lib/views/AppChrome.svelte";
   import ModeRail from "$lib/views/ModeRail.svelte";
   import WorkspacePicker from "$lib/views/WorkspacePicker.svelte";
   import FileTreeView from "$lib/views/FileTreeView.svelte";
   import EditorView from "$lib/views/EditorView.svelte";
   import ChatView from "$lib/views/ChatView.svelte";
+  import Terminal from "$lib/views/Terminal.svelte";
   import StatusBar from "$lib/views/StatusBar.svelte";
   import ToastHost from "$lib/views/ToastHost.svelte";
   import ThreeBackground from "$lib/three/ThreeBackground.svelte";
@@ -16,7 +18,9 @@
   let shell: HTMLDivElement;
   let leftW = $state(240);
   let rightW = $state(320);
-  let drag = $state<"l" | "r" | null>(null);
+  let termH = $state(220);
+  let termOpen = $state(true);
+  let drag = $state<"l" | "r" | "t" | null>(null);
 
   const RAIL = 48;
   const RESIZERS = 10;
@@ -24,6 +28,8 @@
   const LEFT_MAX = 420;
   const RIGHT_MIN = 220;
   const RIGHT_MAX = 480;
+  const TERM_MIN = 80;
+  const TERM_MAX = 560;
 
   function clampPanes() {
     const avail = Math.max(480, window.innerWidth - RAIL - RESIZERS);
@@ -50,6 +56,9 @@
       if (drag === "r") {
         rightW = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, window.innerWidth - e.clientX));
         clampPanes();
+      }
+      if (drag === "t") {
+        termH = Math.min(TERM_MAX, Math.max(TERM_MIN, window.innerHeight - e.clientY - 32));
       }
     };
     const up = () => {
@@ -133,8 +142,31 @@
           aria-label="Resize tree"
           onmousedown={() => (drag = "l")}
         ></button>
-        <div class="split-pane flex-1 relative min-w-0">
-          <EditorView />
+        <div class="split-pane flex-1 relative min-w-0 flex flex-col">
+          <div class="flex-1 min-h-0 overflow-hidden">
+            <EditorView />
+          </div>
+          {#if termOpen}
+            <button
+              type="button"
+              class="split-resizer split-resizer-h"
+              class:active={drag === "t"}
+              aria-label="Resize terminal"
+              onmousedown={() => (drag = "t")}
+            ></button>
+            <div class="terminal-wrap min-h-0" style="height: {termH}px; flex: 0 0 {termH}px">
+              <Terminal bind:open={termOpen} onClose={() => (termOpen = false)} />
+            </div>
+          {:else}
+            <button
+              type="button"
+              class="terminal-reopen"
+              aria-label="Open terminal"
+              onclick={() => (termOpen = true)}
+            >
+              <IconTerminal size={14} stroke={1.75} /> Terminal
+            </button>
+          {/if}
         </div>
         <button
           type="button"
@@ -152,3 +184,56 @@
 
   <StatusBar />
 </div>
+
+<style>
+  .split-resizer-h {
+    flex-shrink: 0;
+    position: relative;
+    width: 100%;
+    height: 5px;
+    border: none;
+    padding: 0;
+    cursor: row-resize;
+    background: transparent;
+    z-index: 5;
+    transition: background 0.15s;
+  }
+  .split-resizer-h::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(var(--scifi-primary-rgb), 0.45),
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .split-resizer-h:hover::after,
+  .split-resizer-h:focus-visible::after,
+  .split-resizer-h.active::after {
+    opacity: 1;
+  }
+  .terminal-wrap {
+    overflow: hidden;
+  }
+  .terminal-reopen {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+    padding: 0.2rem 0.6rem;
+    border-top: 1px solid var(--scifi-border);
+    background: rgba(var(--scifi-surface-1-rgb), 0.4);
+    color: var(--scifi-muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+  .terminal-reopen:hover {
+    color: var(--scifi-primary);
+    background: rgba(var(--scifi-primary-rgb), 0.08);
+  }
+</style>

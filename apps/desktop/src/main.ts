@@ -11,8 +11,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { initTerminalIpc, disposeAllTerminals } from "./terminal";
 
 const isDev = !app.isPackaged;
+
+initTerminalIpc();
 
 if (isDev) {
   console.log("[cadan/desktop] runtime", {
@@ -286,6 +289,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    disposeAllTerminals();
     killServer();
     app.quit();
   }
@@ -301,5 +305,6 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  disposeAllTerminals();
   killServer();
 });

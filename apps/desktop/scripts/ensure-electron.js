@@ -58,3 +58,10 @@ if (!isReady(root)) {
 }
 
 console.log("[cadan/desktop] Electron binary ready");
+
+// Fix node-pty spawn-helper permissions (prebuild ships without +x)
+try {
+  require("./fix-pty-perms.js");
+} catch {
+  /* node-pty not installed yet — skip */
+}
