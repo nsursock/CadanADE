@@ -14,9 +14,9 @@
       <span class="status-bar-item">{appState.activeTab.path}{appState.activeTab.dirty ? " •" : ""}</span>
     {/if}
   </div>
-    <div class="status-bar-section">
-      <span class="status-bar-item">{appState.selectedModelId.split("/").pop()}</span>
-      <span class="status-bar-item">{appState.themeId}</span>
-      <span class="status-bar-item">{appState.tabs.length} tabs</span>
-    </div>
+  <div class="status-bar-section">
+    <span class="status-bar-item">{appState.selectedModelId.split("/").pop()}</span>
+    <span class="status-bar-item">{appState.themeId}</span>
+    <span class="feature-pill text-[0.65rem] py-0.5 px-2">{appState.tabs.length} tabs</span>
+  </div>
 </footer>

@@ -214,10 +214,10 @@
         <div class="scan-line"></div>
 
         <div class="flex items-center justify-between mb-5">
-          <div class="flex items-center gap-2 text-xs tracking-[0.2em] uppercase text-scifi-muted">
-            <span class="inline-block w-2 h-2 rounded-full bg-scifi-success shadow-[0_0_8px_var(--scifi-success)]"></span>
+          <span class="status-chip">
+            <span class="dot"></span>
             workspace · console
-          </div>
+          </span>
           <button
             type="button"
             class="btn btn-ghost btn-xs inline-flex items-center gap-1"
@@ -360,37 +360,3 @@
     </div>
   </div>
 </section>
-
-<style>
-  .picker-card {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.55rem 0.65rem;
-    border-radius: var(--scifi-radius);
-    border: 1px solid var(--scifi-border);
-    background: rgba(var(--scifi-surface-1-rgb), 0.45);
-    color: var(--scifi-text);
-    font: inherit;
-    cursor: pointer;
-    text-align: left;
-    width: 100%;
-    transition:
-      border-color 0.15s,
-      background 0.15s,
-      box-shadow 0.15s;
-  }
-  .picker-card:hover {
-    border-color: var(--scifi-border-accent);
-    background: rgba(var(--scifi-primary-rgb), 0.1);
-    box-shadow: 0 0 18px rgba(var(--scifi-primary-rgb), 0.12);
-  }
-  .picker-title {
-    font-size: 0.78rem;
-    font-weight: 600;
-  }
-  .picker-meta {
-    font-size: 0.62rem;
-    color: var(--scifi-muted);
-  }
-</style>

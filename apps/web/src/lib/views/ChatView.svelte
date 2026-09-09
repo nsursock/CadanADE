@@ -156,13 +156,16 @@
   }
 </script>
 
-<div class="pane h-full min-h-0 min-w-0 flex flex-col overflow-hidden" data-enter>
+<div class="pane pane-bracketed h-full min-h-0 min-w-0 flex flex-col overflow-hidden" data-enter>
   <div class="pane-header shrink-0">
     <span class="pane-title"><span class="pane-title-bar"></span> Agent</span>
     {#if appState.chatStreaming}
       <span class="status-chip"><span class="dot"></span> {appState.chatStatus ?? "running"}</span>
+    {:else}
+      <span class="status-chip"><span class="dot"></span> ready</span>
     {/if}
   </div>
+  <div class="pane-scan"></div>
   <div class="chat flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-3">
     {#if appState.messages.length === 0}
       <p class="text-xs text-scifi-muted">

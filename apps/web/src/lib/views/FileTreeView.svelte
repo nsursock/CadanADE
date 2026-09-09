@@ -58,13 +58,16 @@
   {/each}
 {/snippet}
 
-<div class="pane h-full min-h-0" data-enter>
+<div class="pane pane-bracketed h-full min-h-0" data-enter>
   <div class="pane-header">
     <span class="pane-title"><span class="pane-title-bar"></span> Files</span>
     {#if appState.treeLoading}
       <span class="loading loading-sm" aria-label="Loading"></span>
+    {:else}
+      <span class="badge badge-success">tree</span>
     {/if}
   </div>
+  <div class="pane-scan"></div>
   <div class="tree-view flex-1 overflow-auto" role="tree">
     {#if appState.tree.length === 0}
       <div class="p-3 text-xs text-scifi-muted">Empty or still loading…</div>

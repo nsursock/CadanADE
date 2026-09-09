@@ -112,7 +112,7 @@
   }
 </script>
 
-<div class="pane h-full min-h-0 flex flex-col" data-enter>
+<div class="pane pane-bracketed h-full min-h-0 flex flex-col" data-enter>
   <div class="tab-bar shrink-0">
     {#each appState.tabs as tab}
       <button

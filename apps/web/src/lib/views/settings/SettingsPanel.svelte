@@ -105,7 +105,7 @@
         {/if}
       </div>
 
-      <div class="flex items-center justify-between gap-2 px-4 py-3 border-t border-[var(--scifi-border)]">
+      <div class="modal-actions !justify-between px-4 py-3 border-t border-[var(--scifi-border)] !mb-0">
         <button type="button" class="btn btn-ghost btn-sm inline-flex items-center gap-1" onclick={restoreDefaults}>
           <IconRestore size={14} stroke={1.75} />
           Restore defaults
@@ -115,16 +115,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  :global(.setting-row) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.75rem 0.85rem;
-    border: 1px solid var(--scifi-border);
-    border-radius: var(--scifi-radius);
-    background: color-mix(in srgb, var(--scifi-surface-solid) 70%, transparent);
-  }
-</style>

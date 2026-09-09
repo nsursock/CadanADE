@@ -77,18 +77,20 @@
     </div>
     <p class="text-xs text-scifi-muted mb-3">Optional motion behind the UI. Turn off if the GPU feels busy.</p>
 
-    <label class="setting-row">
-      <div class="min-w-0">
-        <div class="text-sm font-semibold leading-tight">Particle field</div>
-        <div class="text-xs text-scifi-muted mt-0.5">Three.js backdrop on the landing and workspace shell</div>
-      </div>
-      <input
-        type="checkbox"
-        class="toggle shrink-0"
-        checked={appState.threeBackground}
-        onchange={(e) => setThree((e.currentTarget as HTMLInputElement).checked)}
-      />
-    </label>
+    <div class="list">
+      <label class="list-row cursor-pointer">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold leading-tight">Particle field</div>
+          <div class="text-xs text-scifi-muted mt-0.5">Three.js backdrop on the landing and workspace shell</div>
+        </div>
+        <input
+          type="checkbox"
+          class="toggle shrink-0"
+          checked={appState.threeBackground}
+          onchange={(e) => setThree((e.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+    </div>
   </div>
 </section>
 
