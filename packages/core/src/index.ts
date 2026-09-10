@@ -27,6 +27,7 @@ export {
   DEFAULT_SETTINGS,
   SETTINGS_STORAGE_KEY,
   mergeSettings,
+  clampMaxTokens,
   loadSettings,
   saveSettings,
   patchSettings,

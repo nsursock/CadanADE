@@ -9,6 +9,7 @@
     DEFAULT_SETTINGS,
     loadSettings,
     patchSettings,
+    clampMaxTokens,
     type AgentMode,
   } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
@@ -19,6 +20,7 @@
   let model = $state(DEFAULT_SETTINGS.selectedModelId);
   let workerModel = $state(DEFAULT_SETTINGS.workerModelId);
   let agentMode = $state<AgentMode>(DEFAULT_SETTINGS.agentMode);
+  let maxTokens = $state(DEFAULT_SETTINGS.maxTokens);
   let showKey = $state(false);
   let saving = $state(false);
   let saved = $state(false);
@@ -36,6 +38,7 @@
     model = s.selectedModelId || DEFAULT_SETTINGS.selectedModelId;
     workerModel = s.workerModelId || DEFAULT_SETTINGS.workerModelId;
     agentMode = s.agentMode === "thrift" ? "thrift" : "normal";
+    maxTokens = clampMaxTokens(s.maxTokens);
     void hydrateServer();
   });
 
@@ -47,6 +50,7 @@
       if (data.model) model = data.model;
       if (data.workerModel) workerModel = data.workerModel;
       if (data.agentMode === "thrift" || data.agentMode === "normal") agentMode = data.agentMode;
+      if (data.maxTokens != null) maxTokens = clampMaxTokens(data.maxTokens);
       keyHint = data.keyHint ?? null;
       hasKey = Boolean(data.hasKey);
       if (hasKey) void loadModels();
@@ -94,6 +98,7 @@
     try {
       const nextModel = model.trim() || DEFAULT_SETTINGS.selectedModelId;
       const nextWorker = workerModel.trim() || DEFAULT_SETTINGS.workerModelId;
+      const nextMax = clampMaxTokens(maxTokens);
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,18 +108,21 @@
           model: nextModel,
           workerModel: nextWorker,
           agentMode,
+          maxTokens: nextMax,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
       model = nextModel;
       workerModel = nextWorker;
+      maxTokens = typeof data.maxTokens === "number" ? data.maxTokens : nextMax;
       patchSettings({
         openrouterApiKey: apiKey,
         providerBaseUrl: baseUrl,
         selectedModelId: nextModel,
         workerModelId: nextWorker,
         agentMode,
+        maxTokens,
       });
       appState.selectedModelId = nextModel;
       appState.workerModelId = nextWorker;
@@ -282,6 +290,21 @@
         <input class="input font-mono text-xs opacity-60" disabled value={model || "openrouter/free"} />
         <p class="text-[0.65rem] text-scifi-muted mt-1">Save an API key to browse and change models.</p>
       {/if}
+    </label>
+
+    <label class="block mb-3">
+      <span class="label-kicker block mb-1">Max tokens</span>
+      <input
+        class="input font-mono text-xs"
+        type="number"
+        min="256"
+        max="128000"
+        step="256"
+        bind:value={maxTokens}
+      />
+      <p class="text-[0.65rem] text-scifi-muted mt-1">
+        Completion budget per model call (default 4096). Raise if responses truncate mid-edit; lower to curb thrash.
+      </p>
     </label>
 
     {#if error}

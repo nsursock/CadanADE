@@ -415,9 +415,26 @@
       </span>
       {#if chat.turnUsage}
         <span class="text-scifi-text/80">
-          Last · {chat.turnUsage.totalTokens.toLocaleString()} tok · ${chat.turnUsage.costUsd.toFixed(4)} ·
-          {chat.turnUsage.agentMode}
+          Last · {chat.turnUsage.promptTokens.toLocaleString()} in /
+          {chat.turnUsage.completionTokens.toLocaleString()} out ·
+          ${chat.turnUsage.costUsd.toFixed(4)} · {chat.turnUsage.agentMode}
+          {#if chat.turnUsage.routedModel}
+            · <span class="font-mono" title="Routed model">{chat.turnUsage.routedModel}</span>
+          {:else if chat.turnUsage.model}
+            · <span class="font-mono opacity-70">{chat.turnUsage.model}</span>
+          {/if}
+          {#if chat.turnUsage.finishReason}
+            · {chat.turnUsage.finishReason}{#if chat.turnUsage.maxTokens}
+              /{chat.turnUsage.maxTokens}{/if}
+          {/if}
         </span>
+        {#if chat.turnUsage.finishReason === "length"}
+          <span class="text-warning">truncated — raise Max tokens or edit smaller</span>
+        {:else if chat.turnUsage.promptTokens >= 40000}
+          <span class="text-warning">high context — fresh chat recommended</span>
+        {:else if chat.turnUsage.promptTokens >= 20000}
+          <span class="text-scifi-primary/90">context growing</span>
+        {/if}
       {/if}
       {#if chat.openRouterSessionId}
         <span class="font-mono truncate max-w-full opacity-70">{chat.openRouterSessionId}</span>

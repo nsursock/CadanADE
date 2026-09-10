@@ -1,5 +1,6 @@
 import type { WorkspaceService } from "../../services/workspace-service.js";
 import type { AgentMode } from "../../settings/defaults.js";
+import { capCommandResult } from "../context-compact.js";
 import type { LLMProvider, ProviderUsage } from "../provider.js";
 import { summarizeBulkRead } from "./bulk-reader.js";
 import { buildFileOutline, formatOutlineBullets } from "./outline.js";
@@ -147,7 +148,7 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const command = String(args.command ?? "");
       const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
       const result = await ctx.workspace.execute(ctx.root, command, timeoutMs);
-      return JSON.stringify(result);
+      return JSON.stringify(capCommandResult(result));
     },
   };
 }

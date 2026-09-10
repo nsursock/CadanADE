@@ -6,3 +6,5 @@ export { AgentSession } from "./session.js";
 export { AgentEngine } from "./engine.js";
 export { OpenRouterProvider } from "./providers/openrouter.js";
 export { TOOL_SCHEMAS, APPROVAL_REQUIRED } from "./tools/schema.js";
+export { compactToolMessages, capCommandResult, tailText } from "./context-compact.js";
+export { extractCheckCommands, commandMatchesCheck } from "./check-commands.js";

@@ -11,6 +11,7 @@ export const GET: RequestHandler = async () => {
     model: cfg.model,
     workerModel: cfg.workerModel,
     agentMode: cfg.agentMode,
+    maxTokens: cfg.maxTokens,
     fromEnv: Boolean(process.env.OPENROUTER_API_KEY) && !cfg.apiKey,
   });
 };
@@ -23,6 +24,7 @@ export const POST: RequestHandler = async ({ request }) => {
     model: typeof body.model === "string" ? body.model.trim() : undefined,
     workerModel: typeof body.workerModel === "string" ? body.workerModel.trim() : undefined,
     agentMode: body.agentMode === "thrift" || body.agentMode === "normal" ? body.agentMode : undefined,
+    maxTokens: body.maxTokens !== undefined ? Number(body.maxTokens) : undefined,
   });
   return json({
     ok: true,
@@ -32,5 +34,6 @@ export const POST: RequestHandler = async ({ request }) => {
     model: next.model,
     workerModel: next.workerModel,
     agentMode: next.agentMode,
+    maxTokens: next.maxTokens,
   });
 };

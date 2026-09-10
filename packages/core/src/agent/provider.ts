@@ -34,6 +34,8 @@ export interface ProviderUsage {
   /** USD when OpenRouter reports it (stream usage.cost or /generation). */
   costUsd?: number;
   generationId?: string;
+  /** Actual model OpenRouter routed to (e.g. when request used openrouter/free). */
+  routedModel?: string;
 }
 
 export interface ProviderChatOptions {

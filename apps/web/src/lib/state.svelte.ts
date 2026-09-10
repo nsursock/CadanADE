@@ -14,6 +14,12 @@ export type TurnUsage = {
   totalTokens: number;
   costUsd: number;
   agentMode: string;
+  finishReason?: string;
+  maxTokens?: number;
+  /** Configured model id (e.g. openrouter/free). */
+  model?: string;
+  /** Actual model OpenRouter served. */
+  routedModel?: string;
 };
 
 export type ChatSessionTab = {
@@ -261,10 +267,24 @@ class AppState {
     const totalTokens = Number(data.totalTokens ?? promptTokens + completionTokens);
     const costUsd = Number(data.costUsd ?? 0);
     const agentMode = String(data.agentMode ?? this.agentMode);
+    const finishReason = typeof data.finishReason === "string" ? data.finishReason : undefined;
+    const maxTokens = typeof data.maxTokens === "number" ? data.maxTokens : undefined;
+    const model = typeof data.model === "string" ? data.model : undefined;
+    const routedModel = typeof data.routedModel === "string" ? data.routedModel : undefined;
     if (typeof data.openRouterSessionId === "string") {
       chat.openRouterSessionId = data.openRouterSessionId;
     }
-    chat.turnUsage = { promptTokens, completionTokens, totalTokens, costUsd, agentMode };
+    chat.turnUsage = {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      costUsd,
+      agentMode,
+      finishReason,
+      maxTokens,
+      model,
+      routedModel,
+    };
     chat.sessionUsage = {
       promptTokens: chat.sessionUsage.promptTokens + promptTokens,
       completionTokens: chat.sessionUsage.completionTokens + completionTokens,
@@ -272,6 +292,9 @@ class AppState {
       costUsd: chat.sessionUsage.costUsd + costUsd,
       turns: chat.sessionUsage.turns + 1,
     };
+    if (finishReason === "length") {
+      this.showToast("Output hit max tokens — raise Max tokens or use smaller edits", "warning");
+    }
     this.bumpChats();
   }
 

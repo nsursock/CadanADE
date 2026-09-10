@@ -62,6 +62,8 @@ export class OpenRouterProvider implements LLMProvider {
     const toolArgs: Record<number, { id: string; name: string; args: string }> = {};
     let streamUsage: UsageChunk | undefined;
     let streamId: string | undefined;
+    let streamModel: string | undefined;
+    let lastFinishReason = "stop";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -75,8 +77,13 @@ export class OpenRouterProvider implements LLMProvider {
         if (!trimmed.startsWith("data:")) continue;
         const payload = trimmed.slice(5).trim();
         if (payload === "[DONE]") {
-          const usage = await this.resolveUsage(streamUsage, headerGenId ?? streamId);
-          yield { type: "finish", finishReason: "stop", model: options.model, usage };
+          const usage = await this.resolveUsage(streamUsage, headerGenId ?? streamId, streamModel);
+          yield {
+            type: "finish",
+            finishReason: lastFinishReason,
+            model: usage?.routedModel ?? streamModel ?? options.model,
+            usage,
+          };
           return;
         }
         let json: unknown;
@@ -87,10 +94,12 @@ export class OpenRouterProvider implements LLMProvider {
         }
         const chunk = json as {
           id?: string;
+          model?: string;
           usage?: UsageChunk;
           choices?: Array<{ delta?: Record<string, unknown>; finish_reason?: string }>;
         };
         if (typeof chunk.id === "string" && chunk.id) streamId = chunk.id;
+        if (typeof chunk.model === "string" && chunk.model) streamModel = chunk.model;
         if (chunk.usage) streamUsage = chunk.usage;
 
         const choice = chunk.choices?.[0];
@@ -153,6 +162,7 @@ export class OpenRouterProvider implements LLMProvider {
           }
         }
         if (choice.finish_reason) {
+          lastFinishReason = choice.finish_reason;
           for (const [index, slot] of Object.entries(toolArgs)) {
             if (!slot.id) continue;
             yield {
@@ -171,11 +181,20 @@ export class OpenRouterProvider implements LLMProvider {
       }
     }
 
-    const usage = await this.resolveUsage(streamUsage, headerGenId ?? streamId);
-    yield { type: "finish", finishReason: "stop", model: options.model, usage };
+    const usage = await this.resolveUsage(streamUsage, headerGenId ?? streamId, streamModel);
+    yield {
+      type: "finish",
+      finishReason: lastFinishReason,
+      model: usage?.routedModel ?? streamModel ?? options.model,
+      usage,
+    };
   }
 
-  private async resolveUsage(streamUsage: UsageChunk | undefined, generationId?: string): Promise<ProviderUsage | undefined> {
+  private async resolveUsage(
+    streamUsage: UsageChunk | undefined,
+    generationId?: string,
+    streamModel?: string,
+  ): Promise<ProviderUsage | undefined> {
     const fromStream: ProviderUsage | undefined = streamUsage
       ? {
           promptTokens: streamUsage.prompt_tokens ?? 0,
@@ -183,30 +202,42 @@ export class OpenRouterProvider implements LLMProvider {
           totalTokens: streamUsage.total_tokens ?? (streamUsage.prompt_tokens ?? 0) + (streamUsage.completion_tokens ?? 0),
           costUsd: typeof streamUsage.cost === "number" ? streamUsage.cost : undefined,
           generationId,
+          routedModel: streamModel,
         }
       : generationId
-        ? { promptTokens: 0, completionTokens: 0, totalTokens: 0, generationId }
-        : undefined;
+        ? { promptTokens: 0, completionTokens: 0, totalTokens: 0, generationId, routedModel: streamModel }
+        : streamModel
+          ? { promptTokens: 0, completionTokens: 0, totalTokens: 0, routedModel: streamModel }
+          : undefined;
 
     if (!fromStream) return undefined;
-    if (fromStream.costUsd != null || !generationId) return fromStream;
+    if (!generationId) return fromStream;
+
+    const looksLikeRouter =
+      !fromStream.routedModel ||
+      /^(openrouter\/(free|auto)|openrouter\/router)/i.test(fromStream.routedModel);
+    if (fromStream.costUsd != null && !looksLikeRouter) return fromStream;
 
     try {
-      const cost = await this.fetchGenerationCost(generationId);
-      if (cost != null) fromStream.costUsd = cost;
+      const meta = await this.fetchGenerationMeta(generationId);
+      if (meta.cost != null && fromStream.costUsd == null) fromStream.costUsd = meta.cost;
+      if (meta.model) fromStream.routedModel = meta.model;
     } catch {
       /* ignore — tokens alone are still useful */
     }
     return fromStream;
   }
 
-  private async fetchGenerationCost(id: string): Promise<number | null> {
+  private async fetchGenerationMeta(id: string): Promise<{ cost: number | null; model?: string }> {
     const res = await fetch(`${this.base}/generation?id=${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${this.apiKey}` },
     });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { data?: { total_cost?: number; usage?: number } };
+    if (!res.ok) return { cost: null };
+    const json = (await res.json()) as {
+      data?: { total_cost?: number; usage?: number; model?: string };
+    };
     const cost = json.data?.total_cost ?? json.data?.usage;
-    return typeof cost === "number" ? cost : null;
+    const model = typeof json.data?.model === "string" ? json.data.model : undefined;
+    return { cost: typeof cost === "number" ? cost : null, model };
   }
 }

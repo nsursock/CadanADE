@@ -15,6 +15,8 @@ export interface CadanSettings {
   agentMode: AgentMode;
   /** Compact: tool names only, hide reasoning. Verbose: reasoning + tool args/results. */
   chatDisplayMode: ChatDisplayMode;
+  /** Max completion tokens per model call (OpenRouter max_tokens). */
+  maxTokens: number;
   themeId: ThemeId;
   threeBackground: boolean;
   perfLite: boolean;
@@ -29,12 +31,19 @@ export const DEFAULT_SETTINGS: CadanSettings = {
   workerModelId: "openrouter/free",
   agentMode: "normal",
   chatDisplayMode: "compact",
+  maxTokens: 4096,
   themeId: "retrowave",
   threeBackground: false,
   perfLite: false,
 };
 
 const LEGACY_DEFAULT_MODEL = "google/gemma-3-27b-it:free";
+
+export function clampMaxTokens(n: unknown): number {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return DEFAULT_SETTINGS.maxTokens;
+  return Math.min(128_000, Math.max(256, Math.round(v)));
+}
 
 export function mergeSettings(partial: Partial<CadanSettings> | null | undefined): CadanSettings {
   const merged = { ...DEFAULT_SETTINGS, ...(partial ?? {}) };
@@ -47,5 +56,6 @@ export function mergeSettings(partial: Partial<CadanSettings> | null | undefined
   if (merged.chatDisplayMode !== "verbose" && merged.chatDisplayMode !== "compact") {
     merged.chatDisplayMode = DEFAULT_SETTINGS.chatDisplayMode;
   }
+  merged.maxTokens = clampMaxTokens(merged.maxTokens);
   return merged;
 }

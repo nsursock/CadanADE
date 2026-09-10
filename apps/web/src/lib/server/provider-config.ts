@@ -1,4 +1,5 @@
 import type { AgentMode } from "@cadan/core";
+import { clampMaxTokens, DEFAULT_SETTINGS } from "@cadan/core";
 
 /** In-memory provider config for the Node process (UI Save overrides env). */
 export interface ProviderConfig {
@@ -7,6 +8,7 @@ export interface ProviderConfig {
   model: string;
   workerModel: string;
   agentMode: AgentMode;
+  maxTokens: number;
 }
 
 const DEFAULT_BASE = "https://openrouter.ai/api/v1";
@@ -14,6 +16,9 @@ const DEFAULT_MODEL = process.env.CADAN_MODEL ?? "openrouter/free";
 const DEFAULT_WORKER = process.env.CADAN_WORKER_MODEL ?? "openrouter/free";
 const DEFAULT_MODE: AgentMode =
   process.env.CADAN_AGENT_MODE === "thrift" ? "thrift" : "normal";
+const DEFAULT_MAX_TOKENS = clampMaxTokens(
+  process.env.CADAN_MAX_TOKENS ? Number(process.env.CADAN_MAX_TOKENS) : DEFAULT_SETTINGS.maxTokens,
+);
 
 let config: ProviderConfig = {
   apiKey: process.env.OPENROUTER_API_KEY ?? "",
@@ -21,6 +26,7 @@ let config: ProviderConfig = {
   model: DEFAULT_MODEL,
   workerModel: DEFAULT_WORKER,
   agentMode: DEFAULT_MODE,
+  maxTokens: DEFAULT_MAX_TOKENS,
 };
 
 export function getProviderConfig(): ProviderConfig {
@@ -40,6 +46,8 @@ export function updateProviderConfig(partial: Partial<ProviderConfig>) {
       partial.agentMode === "thrift" || partial.agentMode === "normal"
         ? partial.agentMode
         : config.agentMode,
+    maxTokens:
+      partial.maxTokens !== undefined ? clampMaxTokens(partial.maxTokens) : config.maxTokens,
   };
   return getProviderConfig();
 }

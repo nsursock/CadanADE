@@ -97,6 +97,7 @@ export function createAgentRuntime(workspace: WorkspaceService) {
         root,
         model: cfg.model,
         agentMode: cfg.agentMode,
+        maxTokens: cfg.maxTokens,
         worker:
           cfg.agentMode === "thrift" && cfg.workerModel
             ? { provider: llm, model: cfg.workerModel }

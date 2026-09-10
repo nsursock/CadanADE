@@ -15,7 +15,18 @@
     {/if}
   </div>
   <div class="status-bar-section">
-    <span class="status-bar-item">{appState.selectedModelId.split("/").pop()}</span>
+    <span
+      class="status-bar-item font-mono"
+      title={appState.turnUsage?.routedModel
+        ? `Routed: ${appState.turnUsage.routedModel}\nSelected: ${appState.selectedModelId}`
+        : appState.selectedModelId}
+    >
+      {#if appState.turnUsage?.routedModel}
+        {appState.turnUsage.routedModel.split("/").pop()}
+      {:else}
+        {appState.selectedModelId.split("/").pop()}
+      {/if}
+    </span>
     {#if appState.agentMode === "thrift"}
       <span class="badge badge-primary">thrift</span>
     {:else}
@@ -24,6 +35,17 @@
     {#if appState.sessionUsage.turns > 0}
       <span class="status-bar-item" title={appState.openRouterSessionId ?? "OpenRouter session"}>
         ${appState.sessionUsage.costUsd.toFixed(4)} · {appState.sessionUsage.totalTokens.toLocaleString()} tok
+      </span>
+    {/if}
+    {#if appState.turnUsage?.finishReason === "length"}
+      <span class="status-bar-item text-warning" title="Last completion hit max_tokens">length</span>
+    {:else if (appState.turnUsage?.promptTokens ?? 0) >= 20000}
+      <span
+        class="status-bar-item"
+        class:text-warning={(appState.turnUsage?.promptTokens ?? 0) >= 40000}
+        title="Last turn prompt tokens"
+      >
+        {(appState.turnUsage?.promptTokens ?? 0).toLocaleString()} in
       </span>
     {/if}
     <span class="status-bar-item">{appState.themeId}</span>
