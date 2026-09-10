@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import IconTerminal from "@tabler/icons-svelte/icons/terminal";
+  import { createCommandPalette } from "@scifiui/core/js";
   import AppChrome from "$lib/views/AppChrome.svelte";
   import ModeRail from "$lib/views/ModeRail.svelte";
   import WorkspacePicker from "$lib/views/WorkspacePicker.svelte";
@@ -19,7 +19,9 @@
   let leftW = $state(240);
   let rightW = $state(320);
   let termH = $state(220);
+  let filesOpen = $state(true);
   let termOpen = $state(true);
+  let chatOpen = $state(true);
   let drag = $state<"l" | "r" | "t" | null>(null);
 
   const RAIL = 48;
@@ -48,6 +50,21 @@
   onMount(() => {
     if (shell) enterShell(shell);
     clampPanes();
+
+    createCommandPalette({
+      keys: ["mod+k"],
+      items: [
+        { title: "Toggle file browser", group: "Panels", icon: "folders", command: "toggle-files", shortcut: ["mod", "B"] },
+        { title: "Toggle terminal", group: "Panels", icon: "terminal", command: "toggle-terminal", shortcut: ["mod", "`"] },
+        { title: "Toggle chat agent", group: "Panels", icon: "message", command: "toggle-chat", shortcut: ["mod", "J"] },
+      ],
+      onSelect: (cmd) => {
+        if (cmd === "toggle-files") filesOpen = !filesOpen;
+        else if (cmd === "toggle-terminal") termOpen = !termOpen;
+        else if (cmd === "toggle-chat") chatOpen = !chatOpen;
+      },
+    });
+
     const move = (e: MouseEvent) => {
       if (drag === "l") {
         leftW = Math.min(LEFT_MAX, Math.max(LEFT_MIN, e.clientX - RAIL));
@@ -134,16 +151,18 @@
     <div class="flex flex-1 min-h-0 min-w-0 gap-1 p-1 overflow-hidden">
       <ModeRail />
       <div class="split split-row flex-1 min-h-0 min-w-0 overflow-hidden gap-1">
-        <div class="split-pane" style="flex: 0 1 {leftW}px; width: {leftW}px; min-width: {LEFT_MIN}px">
-          <FileTreeView onOpenFile={openFile} />
-        </div>
-        <button
-          type="button"
-          class="split-resizer"
-          class:active={drag === "l"}
-          aria-label="Resize tree"
-          onmousedown={() => (drag = "l")}
-        ></button>
+        {#if filesOpen}
+          <div class="split-pane" style="flex: 0 1 {leftW}px; width: {leftW}px; min-width: {LEFT_MIN}px">
+            <FileTreeView onOpenFile={openFile} onClose={() => (filesOpen = false)} />
+          </div>
+          <button
+            type="button"
+            class="split-resizer"
+            class:active={drag === "l"}
+            aria-label="Resize tree"
+            onmousedown={() => (drag = "l")}
+          ></button>
+        {/if}
         <div class="split-pane flex-1 relative min-w-0 flex flex-col">
           <div class="flex-1 min-h-0 overflow-hidden">
             <EditorView />
@@ -159,27 +178,20 @@
             <div class="terminal-wrap min-h-0" style="height: {termH}px; flex: 0 0 {termH}px">
               <Terminal onClose={() => (termOpen = false)} />
             </div>
-          {:else}
-            <button
-              type="button"
-              class="terminal-reopen"
-              aria-label="Open terminal"
-              onclick={() => (termOpen = true)}
-            >
-              <IconTerminal size={14} stroke={1.75} /> Terminal
-            </button>
           {/if}
         </div>
-        <button
-          type="button"
-          class="split-resizer"
-          class:active={drag === "r"}
-          aria-label="Resize chat"
-          onmousedown={() => (drag = "r")}
-        ></button>
-        <div class="split-pane min-w-0" style="flex: 0 1 {rightW}px; width: {rightW}px; min-width: {RIGHT_MIN}px">
-          <ChatView />
-        </div>
+        {#if chatOpen}
+          <button
+            type="button"
+            class="split-resizer"
+            class:active={drag === "r"}
+            aria-label="Resize chat"
+            onmousedown={() => (drag = "r")}
+          ></button>
+          <div class="split-pane min-w-0" style="flex: 0 1 {rightW}px; width: {rightW}px; min-width: {RIGHT_MIN}px">
+            <ChatView onClose={() => (chatOpen = false)} />
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -220,22 +232,5 @@
   }
   .terminal-wrap {
     overflow: hidden;
-  }
-  .terminal-reopen {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    flex-shrink: 0;
-    padding: 0.2rem 0.6rem;
-    border-top: 1px solid var(--scifi-border);
-    background: rgba(var(--scifi-surface-1-rgb), 0.4);
-    color: var(--scifi-muted);
-    font-size: 0.7rem;
-    cursor: pointer;
-    transition: color 0.15s, background 0.15s;
-  }
-  .terminal-reopen:hover {
-    color: var(--scifi-primary);
-    background: rgba(var(--scifi-primary-rgb), 0.08);
   }
 </style>

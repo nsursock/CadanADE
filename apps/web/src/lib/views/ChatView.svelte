@@ -8,10 +8,13 @@
   import IconListDetails from "@tabler/icons-svelte/icons/list-details";
   import IconClipboardCopy from "@tabler/icons-svelte/icons/clipboard-copy";
   import IconPlus from "@tabler/icons-svelte/icons/plus";
+  import IconX from "@tabler/icons-svelte/icons/x";
   import { patchSettings, type AgentEvent, type ChatDisplayMode, type ChatPart } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
   import { formatChatTranscript } from "$lib/chat-transcript";
   import Tooltip from "./Tooltip.svelte";
+
+  let { onClose }: { onClose?: () => void } = $props();
 
   let copying = $state(false);
   let bootstrapping = $state(false);
@@ -342,6 +345,18 @@
         <span class="status-chip"><span class="dot"></span> {chat.status ?? "running"}</span>
       {:else}
         <span class="status-chip"><span class="dot"></span> ready</span>
+      {/if}
+      {#if onClose}
+        <Tooltip tip="Hide (⌘K → Toggle chat agent)" prefer="bottom">
+          <button
+            type="button"
+            class="icon-btn btn-xs"
+            aria-label="Hide chat agent"
+            onclick={onClose}
+          >
+            <IconX size={14} stroke={1.75} />
+          </button>
+        </Tooltip>
       {/if}
     </div>
   </div>

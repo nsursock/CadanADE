@@ -12,12 +12,13 @@
   import IconClipboard from "@tabler/icons-svelte/icons/clipboard";
   import IconRoute from "@tabler/icons-svelte/icons/route";
   import IconEdit from "@tabler/icons-svelte/icons/edit";
+  import IconX from "@tabler/icons-svelte/icons/x";
   import { fly, fade } from "svelte/transition";
   import { appState } from "$lib/state.svelte";
   import Tooltip from "./Tooltip.svelte";
   import ContextMenu from "./ContextMenu.svelte";
 
-  let { onOpenFile }: { onOpenFile: (path: string) => void } = $props();
+  let { onOpenFile, onClose }: { onOpenFile: (path: string) => void; onClose?: () => void } = $props();
 
   let pendingDelete = $state<TreeNode | null>(null);
   let deleting = $state(false);
@@ -245,6 +246,18 @@
       <span class="loading loading-sm" aria-label="Loading"></span>
     {:else}
       <span class="badge badge-success">tree</span>
+    {/if}
+    {#if onClose}
+      <Tooltip tip="Hide (⌘K → Toggle file browser)" prefer="bottom">
+        <button
+          type="button"
+          class="icon-btn btn-xs ml-auto"
+          aria-label="Hide file browser"
+          onclick={onClose}
+        >
+          <IconX size={14} stroke={1.75} />
+        </button>
+      </Tooltip>
     {/if}
   </div>
   <div class="pane-scan"></div>
