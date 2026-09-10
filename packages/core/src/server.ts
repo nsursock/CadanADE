@@ -29,4 +29,4 @@ export {
   TOOL_SCHEMAS,
   APPROVAL_REQUIRED,
 } from "./agent/index.js";
-export type { AgentEvent, AgentEventType, LLMProvider, ProviderUsage } from "./agent/index.js";
+export type { AgentEvent, AgentEventType, LLMProvider, ProviderMessage, ProviderUsage } from "./agent/index.js";

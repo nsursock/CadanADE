@@ -242,13 +242,13 @@ class AppState {
     this.bumpChats();
   }
 
-  maybeTitleFromUserText(sessionKey: string, text: string) {
+  setChatTitle(sessionKey: string, title: string) {
     const chat = this.chatById(sessionKey);
     if (!chat) return;
-    if (chat.messages.some((m) => m.role === "user")) return;
-    const trimmed = text.trim().replace(/\s+/g, " ");
-    if (!trimmed) return;
-    chat.title = trimmed.length > 28 ? `${trimmed.slice(0, 28)}…` : trimmed;
+    const cleaned = title.trim().replace(/\s+/g, " ");
+    if (!cleaned) return;
+    chat.title = cleaned;
+    this.bumpChats();
   }
 
   applyUsage(sessionKey: string, data: Record<string, unknown> | undefined) {

@@ -4,6 +4,7 @@ import {
   OpenRouterProvider,
   encodeSSE,
   type AgentEvent,
+  type ProviderMessage,
   type WorkspaceService,
 } from "@cadan/core/server";
 import { getProviderConfig } from "./provider-config";
@@ -112,6 +113,66 @@ export function createAgentRuntime(workspace: WorkspaceService) {
     cancel(sessionId?: string) {
       const session = sessionId ? sessions.get(sessionId) : activeId ? sessions.get(activeId) : null;
       session?.cancel();
+    },
+    /** Cheap one-shot LLM call to summarize a conversation into a 2-3 word title. */
+    async generateTitle(sessionId: string, userText: string): Promise<string | null> {
+      const cfg = getProviderConfig();
+      if (!cfg.apiKey) return null;
+      const llm = provider();
+      const system =
+        "You generate a 2-3 word title that describes what the user is asking about. " +
+        "Rules: exactly 2 or 3 words, no punctuation, no quotes, no articles (a/an/the), " +
+        "no filler (here's, this is, the user wants), no complete sentences. " +
+        "Output ONLY the title words, nothing else.";
+      const examples: ProviderMessage[] = [
+        { role: "user", content: "What's this project about?" },
+        { role: "assistant", content: "Project Overview" },
+        { role: "user", content: "Fix the bug where the login button doesn't work" },
+        { role: "assistant", content: "Fix Login Button" },
+        { role: "user", content: "Can you add a dark mode toggle to the settings page?" },
+        { role: "assistant", content: "Add Dark Mode" },
+        { role: "user", content: "Refactor the database connection pooling code" },
+        { role: "assistant", content: "Refactor DB Pooling" },
+      ];
+      let title = "";
+      let reasoning = "";
+      try {
+        for await (const ev of llm.chat(
+          [
+            { role: "system", content: system },
+            ...examples,
+            { role: "user", content: userText.slice(0, 500) },
+          ],
+          { model: cfg.model, temperature: 0.2, maxTokens: 20 },
+        )) {
+          if (ev.type === "text.delta") title += ev.text;
+          else if (ev.type === "reasoning.delta") reasoning += ev.text;
+          else if (ev.type === "error") {
+            console.error("[generateTitle] LLM error:", ev.message);
+            return null;
+          }
+        }
+      } catch (e) {
+        console.error("[generateTitle] exception:", e instanceof Error ? e.message : e);
+        return null;
+      }
+      // Some free models put the answer in reasoning, not content
+      const raw = title.trim() || reasoning.trim();
+      if (!raw) {
+        console.error("[generateTitle] empty response (title=%j reasoning=%j)", title, reasoning);
+        return null;
+      }
+      const cleaned = raw
+        .replace(/^["']|["']$/g, "")
+        .replace(/[.!?]$/g, "")
+        .replace(/^(here'?s|this is|the user wants|user wants)\s+/i, "")
+        .split(/\s+/)
+        .filter((w) => !/^(a|an|the)$/i.test(w))
+        .slice(0, 3)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+      console.log("[generateTitle] generated:", cleaned, "from raw:", raw);
+      return cleaned || null;
     },
     encodeSSE,
   };

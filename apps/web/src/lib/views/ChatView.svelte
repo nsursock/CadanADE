@@ -201,6 +201,9 @@
       case "cancelled":
         if (ev.data) appState.applyUsage(key, ev.data);
         break;
+      case "title":
+        if (ev.data?.title) appState.setChatTitle(key, String(ev.data.title));
+        break;
     }
   }
 
@@ -230,7 +233,6 @@
     const sessionKey = active.sessionId;
     const priorMessages = active.messages;
     appState.setChatDraft(sessionKey, "");
-    appState.maybeTitleFromUserText(sessionKey, text);
     appState.setChatStreaming(sessionKey, true, "Starting…");
     appState.setChatPendingApproval(sessionKey, null);
     appState.setChatMessages(sessionKey, [

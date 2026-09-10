@@ -95,6 +95,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   const chatModel = getChatModel(sessionId);
+  const isFirstInteraction = !chatModel.messages.some((m) => m.role === "user");
   chatModel.add("user", text);
   chatModel.add("assistant", "");
   chatModel.setStreaming(true);
@@ -109,6 +110,18 @@ export const POST: RequestHandler = async ({ request }) => {
       };
 
       try {
+        if (isFirstInteraction && sessionId) {
+          const title = await agentRuntime.generateTitle(sessionId, text);
+          console.log("[chat] title result:", title, "for session:", sessionId);
+          if (title) {
+            send({
+              type: "title",
+              sessionId: sessionId ?? "unknown",
+              timestamp: Date.now(),
+              data: { title },
+            });
+          }
+        }
         await agentRuntime.runTurn(root, text, send, sessionId);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

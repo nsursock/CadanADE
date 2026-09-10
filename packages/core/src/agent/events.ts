@@ -9,7 +9,8 @@ export type AgentEventType =
   | "tool.approval_required"
   | "done"
   | "error"
-  | "cancelled";
+  | "cancelled"
+  | "title";
 
 export interface AgentEvent {
   type: AgentEventType;
