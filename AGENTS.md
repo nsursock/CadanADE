@@ -4,6 +4,12 @@ Operating manual for coding agents working in **CadanADE** (“Coding All Day an
 
 Inspired by patterns common in large-repo `AGENTS.md` files ([Coldtea field study](https://www.coldtea.ai/blog/agents-md-field-study)): orientation, verification, workflow, and explicit don’t-rules.
 
+## Session start
+
+Always read `README.md` in full at the start of a new conversation — it carries the human-oriented project notes, quick-start commands, and current benchmark context that orient the work. Do not read a partial slice; read the entire file.
+
+The Cadan runtime agent (system prompt in `packages/core/src/agent/engine.ts`) should read `AGENTS.md` from the workspace it is operating on if the file exists.
+
 ## Project overview
 
 CadanADE is a local coding IDE: SvelteKit web UI + agent runtime + optional Electron shell. ScifiUI (sibling repo) is the CSS class kit; Cadan is its first client. AdaanIDE is a behavioral reference only — do not copy large Adaan panels wholesale.

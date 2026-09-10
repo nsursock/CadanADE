@@ -45,3 +45,4 @@ export const workspaceController = new WorkspaceController(workspaceModel, works
 export const editorController = new EditorController(editorModel, workspaceService);
 export const chatController = new ChatController(chatModel);
 export const agentRuntime = createAgentRuntime(workspaceService);
+export { workspaceService };

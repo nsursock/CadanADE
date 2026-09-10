@@ -78,6 +78,7 @@ export function createAgentRuntime(workspace: WorkspaceService) {
       text: string,
       onEvent: (ev: AgentEvent) => void,
       sessionId?: string,
+      contextFiles?: string[],
     ) {
       let session: AgentSession;
       if (sessionId) {
@@ -101,6 +102,7 @@ export function createAgentRuntime(workspace: WorkspaceService) {
             ? { provider: llm, model: cfg.workerModel }
             : undefined,
         emit: onEvent,
+        contextFiles,
       });
       await engine.run(session, text);
       return session;
@@ -121,7 +123,8 @@ export function createAgentRuntime(workspace: WorkspaceService) {
       const llm = provider();
       const system =
         "Your reply must be exactly 2 or 3 words. Nothing else. No reasoning. " +
-        "No full sentences. No explanation. Just 2-3 words that title the user's request. " +
+        "No full sentences. No explanation. No preamble like 'Here is' or 'Sure'. " +
+        "Just 2-3 words that title the user's request. " +
         "Example replies: 'Project Overview', 'Fix Login Bug', 'Run Python Files'.";
       const examples: ProviderMessage[] = [
         { role: "user", content: "What's this project about?" },
@@ -135,13 +138,16 @@ export function createAgentRuntime(workspace: WorkspaceService) {
         { role: "user", content: "run every py files in this repo" },
         { role: "assistant", content: "Run Python Files" },
       ];
+      // Strip @-mention tokens — they're file paths, not part of the request.
+      const cleanUserText = userText.replace(/@\S+/g, "").replace(/\s+/g, " ").trim();
+      const titleInput = cleanUserText || userText;
       let title = "";
       try {
         for await (const ev of llm.chat(
           [
             { role: "system", content: system },
             ...examples,
-            { role: "user", content: userText.slice(0, 500) },
+            { role: "user", content: titleInput.slice(0, 500) },
           ],
           { model: cfg.model, temperature: 0.2, maxTokens: 1000 },
         )) {
@@ -158,6 +164,12 @@ export function createAgentRuntime(workspace: WorkspaceService) {
       const raw = title.trim();
       if (!raw) {
         console.error("[generateTitle] empty content response");
+        return null;
+      }
+      // Reject common non-title preambles the free model tends to emit.
+      const lower = raw.toLowerCase();
+      if (/^(here'?s|sure|okay|ok|let me|i'll|i will|this is|the user)\b/.test(lower)) {
+        console.log("[generateTitle] rejected preamble:", raw);
         return null;
       }
       const cleaned = raw

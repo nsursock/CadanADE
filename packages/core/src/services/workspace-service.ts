@@ -7,7 +7,58 @@ import type { TreeNode } from "../types.js";
 const SKIP = new Set([".git", "node_modules", ".DS_Store", "dist", ".svelte-kit", "build"]);
 const DENY = [/rm\s+-rf\s+\//i, /sudo\b/i, /mkfs/i, /dd\s+if=/i, /:\(\)\s*\{/];
 
+/** Minimal .gitignore pattern matcher. */
+class GitignoreFilter {
+  private patterns: { negate: boolean; dirOnly: boolean; re: RegExp }[] = [];
+
+  constructor(private root: string) {}
+
+  async load() {
+    try {
+      const raw = await fs.readFile(path.join(this.root, ".gitignore"), "utf8");
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const negate = trimmed.startsWith("!");
+        let pat = negate ? trimmed.slice(1) : trimmed;
+        const dirOnly = pat.endsWith("/");
+        if (dirOnly) pat = pat.slice(0, -1);
+        // Patterns containing "/" (other than trailing) are anchored to root.
+        // Patterns without "/" match at any directory level.
+        const anchored = pat.includes("/");
+        // Convert glob to regex: ** → .*, * → [^/]*, ? → [^/]
+        let re = pat
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*\*/g, "\x00")
+          .replace(/\*/g, "[^/]*")
+          .replace(/\?/g, "[^/]")
+          .replace(/\x00/g, ".*");
+        if (anchored) {
+          re = `^(?:${re})(?:/.*)?$`;
+        } else {
+          re = `^(?:.*/)?${re}(?:/.*)?$`;
+        }
+        this.patterns.push({ negate, dirOnly, re: new RegExp(re) });
+      }
+    } catch {
+      /* no .gitignore — fine */
+    }
+  }
+
+  /** Returns true if the relative path should be ignored. */
+  ignored(relPath: string, isDir: boolean): boolean {
+    let result = false;
+    for (const p of this.patterns) {
+      if (p.dirOnly && !isDir) continue;
+      if (p.re.test(relPath)) result = !p.negate;
+    }
+    return result;
+  }
+}
+
 export class WorkspaceService {
+  private gitignoreCache = new Map<string, GitignoreFilter>();
+
   assertInside(root: string, target: string): string {
     const resolvedRoot = path.resolve(root);
     const resolved = path.resolve(resolvedRoot, target);
@@ -21,8 +72,25 @@ export class WorkspaceService {
     return createHash("sha256").update(content).digest("hex").slice(0, 16);
   }
 
+  private async getGitignore(root: string): Promise<GitignoreFilter> {
+    const rootAbs = path.resolve(root);
+    let gf = this.gitignoreCache.get(rootAbs);
+    if (!gf) {
+      gf = new GitignoreFilter(rootAbs);
+      await gf.load();
+      this.gitignoreCache.set(rootAbs, gf);
+    }
+    return gf;
+  }
+
+  /** Invalidate the gitignore cache for a root (e.g. after .gitignore changes). */
+  invalidateGitignore(root: string) {
+    this.gitignoreCache.delete(path.resolve(root));
+  }
+
   async listTree(root: string, rel = "", depth = 0, maxDepth = 4): Promise<TreeNode[]> {
     const abs = this.assertInside(root, rel || ".");
+    const gf = await this.getGitignore(root);
     const entries = await fs.readdir(abs, { withFileTypes: true });
     const nodes: TreeNode[] = [];
 
@@ -32,7 +100,9 @@ export class WorkspaceService {
     })) {
       if (SKIP.has(entry.name) || entry.name.startsWith(".")) continue;
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
+      const isDir = entry.isDirectory();
+      if (gf.ignored(childRel, isDir)) continue;
+      if (isDir) {
         const children = depth < maxDepth ? await this.listTree(root, childRel, depth + 1, maxDepth) : [];
         nodes.push({ name: entry.name, path: childRel, kind: "dir", children });
       } else if (entry.isFile()) {
@@ -44,13 +114,16 @@ export class WorkspaceService {
 
   async listFlat(root: string, rel = ""): Promise<string[]> {
     const abs = this.assertInside(root, rel || ".");
+    const gf = await this.getGitignore(root);
     const out: string[] = [];
     const walk = async (dir: string, prefix: string) => {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (SKIP.has(entry.name) || entry.name.startsWith(".")) continue;
         const child = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
+        const isDir = entry.isDirectory();
+        if (gf.ignored(child, isDir)) continue;
+        if (isDir) {
           out.push(child + "/");
           await walk(path.join(dir, entry.name), child);
         } else if (entry.isFile()) {
@@ -132,7 +205,14 @@ export class WorkspaceService {
   async search(root: string, query: string, glob?: string) {
     const re = new RegExp(query, "i");
     const globRe = glob
-      ? new RegExp("^" + glob.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$")
+      ? new RegExp(
+          "^" +
+            glob
+              .replace(/\./g, "\\.")
+              .replace(/\*\*\//g, "(?:.*/)?")
+              .replace(/\*/g, ".*") +
+            "$",
+        )
       : null;
     const files = await this.listFlat(root, "");
     const hits: { path: string; line: number; text: string }[] = [];

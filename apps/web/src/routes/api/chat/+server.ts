@@ -94,6 +94,10 @@ export const POST: RequestHandler = async ({ request }) => {
     sessionId = agentRuntime.getSession().id;
   }
 
+  const contextFiles: string[] = Array.isArray(body.contextFiles)
+    ? body.contextFiles.map((f: unknown) => String(f)).filter(Boolean)
+    : [];
+
   const chatModel = getChatModel(sessionId);
   const isFirstInteraction = !chatModel.messages.some((m) => m.role === "user");
   chatModel.add("user", text);
@@ -122,7 +126,7 @@ export const POST: RequestHandler = async ({ request }) => {
             });
           }
         }
-        await agentRuntime.runTurn(root, text, send, sessionId);
+        await agentRuntime.runTurn(root, text, send, sessionId, contextFiles);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         send({

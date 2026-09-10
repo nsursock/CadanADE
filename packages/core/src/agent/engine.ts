@@ -8,26 +8,48 @@ import type { WorkspaceService } from "../services/workspace-service.js";
 import type { AgentMode } from "../settings/defaults.js";
 
 const SYSTEM_NORMAL = `You are Cadan, an autonomous coding agent in a local workspace IDE.
+If the workspace has an AGENTS.md file, read it at the start of a new conversation for workspace-specific guidance.
 Use tools to inspect and edit files. Prefer small, correct changes.
 Before creating a new file, list the workspace and read a neighboring file to match existing conventions (language, extension, style).
 When asked to write code, create or edit files in the workspace — never paste code only into your reply.
 Match the file type of existing files in the workspace; do not default to markdown when the workspace uses code files.
 After writing runnable code, execute it to verify before claiming success.
+If the workspace has a virtual environment (e.g. .venv/bin/python), use it for all Python commands — never bare \`python\`.
+When the user mentions a file by name, search for it directly — do not list the workspace first. Prefer search_files over list_files for orientation; list_files returns every file including logs and build artifacts and can be very large. Use list_files only before creating a new file to match neighboring conventions.
 Act on reasonable assumptions; do not ask clarifying questions unless blocked.
 When done, briefly summarize what you changed.`;
 
 const SYSTEM_THRIFT = `You are Cadan, an autonomous coding agent in a local workspace IDE (thrift mode).
+If the workspace has an AGENTS.md file, read it at the start of a new conversation for workspace-specific guidance.
 Use tools to inspect and edit files. Prefer small, correct changes.
 Before creating a new file, list the workspace and read a neighboring file to match existing conventions (language, extension, style).
 When asked to write code, create or edit files in the workspace — never paste code only into your reply.
 Match the file type of existing files in the workspace; do not default to markdown when the workspace uses code files.
 After writing runnable code, execute it to verify before claiming success.
+If the workspace has a virtual environment (e.g. .venv/bin/python), use it for all Python commands — never bare \`python\`.
+When the user mentions a file by name, search for it directly — do not list the workspace first. Prefer search_files over list_files for orientation; list_files returns every file including logs and build artifacts and can be very large. Use list_files only before creating a new file to match neighboring conventions.
 Bulk file reads over the line threshold return an outline only — follow up with startLine/endLine or search_files for the slices you need. Do not ask for the full file body when an outline suffices.
 Files you create or write in this turn are never blocked on re-read — you can read them back in full to validate.
 Act on reasonable assumptions; do not ask clarifying questions unless blocked.
 When done, briefly summarize what you changed.`;
 
 const DEFAULT_MODEL = process.env.CADAN_MODEL ?? "openrouter/free";
+
+/**
+ * Detect degenerate reasoning loops — the same text block repeated 3+ times.
+ * Uses a 200-char trailing fingerprint and substring search.
+ */
+function isReasoningLoop(text: string, fingerprintSize = 200, minTotal = 600): boolean {
+  if (text.length < minTotal) return false;
+  const fingerprint = text.slice(-fingerprintSize);
+  let count = 0;
+  let idx = 0;
+  while ((idx = text.indexOf(fingerprint, idx)) !== -1) {
+    count++;
+    idx += fingerprintSize;
+  }
+  return count >= 3;
+}
 
 export interface EngineOptions {
   provider: LLMProvider;
@@ -39,6 +61,8 @@ export interface EngineOptions {
   worker?: { provider: LLMProvider; model: string };
   readLineThreshold?: number;
   maxIterations?: number;
+  /** Workspace-relative file paths to inject as context before the user message. */
+  contextFiles?: string[];
   emit: (event: AgentEvent) => void;
 }
 
@@ -69,6 +93,8 @@ export class AgentEngine {
     const turnUsage = emptyUsage();
     const generations: string[] = [];
     const writtenThisTurn = new Set<string>();
+    let lastToolSignature = "";
+    let toolRepeatCount = 0;
 
     const track = (u: ProviderUsage) => {
       addUsage(turnUsage, u);
@@ -80,6 +106,28 @@ export class AgentEngine {
     } else if (session.messages[0]?.role === "system") {
       session.messages[0] = { role: "system", content: system };
     }
+
+    // Inject context files (active editor file + @-mentioned files) before the user message.
+    if (this.opts.contextFiles?.length) {
+      const blocks: string[] = [];
+      for (const rel of this.opts.contextFiles) {
+        try {
+          const file = await workspace.readFile(root, rel);
+          blocks.push(`<file path="${rel}">\n${file.content}\n</file>`);
+        } catch {
+          /* skip unreadable files */
+        }
+      }
+      if (blocks.length) {
+        session.messages.push({
+          role: "system",
+          content:
+            `You already have the full contents of the following files — do NOT read them again with read_file or list_files. ` +
+            `Reference them directly from the context below.\n\n${blocks.join("\n\n")}`,
+        });
+      }
+    }
+
     session.messages.push({ role: "user", content: userText });
 
     const usagePayload = () => ({
@@ -126,6 +174,17 @@ export class AgentEngine {
             if (ev.text) {
               reasoningText += ev.text;
               emit(agentEvent("reasoning.delta", session.id, { text: ev.text }));
+              if (isReasoningLoop(reasoningText)) {
+                emit(
+                  agentEvent("status", session.id, {
+                    message: "Reasoning loop detected — stopping generation",
+                    iteration: i + 1,
+                    model,
+                    agentMode,
+                  }),
+                );
+                break;
+              }
             }
             if (ev.details?.length) reasoningDetails.push(...ev.details);
           } else if (ev.type === "text.delta") {
@@ -162,15 +221,17 @@ export class AgentEngine {
             return;
           } else if (ev.type === "finish") {
             if (ev.usage) track(ev.usage);
-            for (const slot of Object.values(argBuf)) {
-              if (!slot.id || !slot.name) continue;
-              toolCalls.push({
-                id: slot.id,
-                type: "function",
-                function: { name: slot.name, arguments: slot.args || "{}" },
-              });
-            }
           }
+        }
+
+        // Flush pending tool calls — handles both normal finish and early break.
+        for (const slot of Object.values(argBuf)) {
+          if (!slot.id || !slot.name) continue;
+          toolCalls.push({
+            id: slot.id,
+            type: "function",
+            function: { name: slot.name, arguments: slot.args || "{}" },
+          });
         }
 
         const assistantMsg: ProviderMessage = {
@@ -187,6 +248,31 @@ export class AgentEngine {
           emit(agentEvent("done", session.id, usagePayload()));
           return;
         }
+
+        // Detect identical tool calls across consecutive iterations.
+        const signature = toolCalls
+          .map((tc) => `${tc.function.name}:${tc.function.arguments}`)
+          .sort()
+          .join("|");
+        if (signature === lastToolSignature) {
+          toolRepeatCount++;
+          if (toolRepeatCount >= 2) {
+            emit(
+              agentEvent("status", session.id, {
+                message: "Repetitive tool calls detected — stopping",
+                iteration: i + 1,
+                model,
+                agentMode,
+              }),
+            );
+            session.status = "done";
+            emit(agentEvent("done", session.id, { message: "Repetitive tool calls", ...usagePayload() }));
+            return;
+          }
+        } else {
+          toolRepeatCount = 0;
+        }
+        lastToolSignature = signature;
 
         for (const call of toolCalls) {
           const name = call.function.name;

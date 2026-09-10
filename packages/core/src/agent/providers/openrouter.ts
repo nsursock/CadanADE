@@ -119,6 +119,12 @@ export class OpenRouterProvider implements LLMProvider {
           }
         }
         if (reasoningText || (Array.isArray(reasoningDetails) && reasoningDetails.length)) {
+          // Some models stream reasoning as one-token-per-line via
+          // reasoning_details (each segment carries trailing whitespace/newlines).
+          // The UI renders reasoning with whitespace-pre-wrap, so those newlines
+          // become visible line breaks and adjacent spaces double up. Collapse
+          // all whitespace runs to a single space so reasoning flows as prose.
+          if (reasoningText) reasoningText = reasoningText.replace(/\s+/g, " ");
           yield {
             type: "reasoning.delta",
             text: reasoningText,

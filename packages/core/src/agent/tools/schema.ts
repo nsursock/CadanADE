@@ -112,7 +112,8 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
     type: "function",
     function: {
       name: "execute_command",
-      description: "Run a shell command in the workspace (deny-listed commands blocked).",
+      description:
+        "Run a shell command. The working directory is already the workspace root — do not cd into it. Deny-listed commands are blocked.",
       parameters: {
         type: "object",
         properties: {

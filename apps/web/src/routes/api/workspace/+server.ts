@@ -6,7 +6,7 @@ import {
   listCandidateRoots,
 } from "@cadan/core/server";
 import { addRecent, loadRecent } from "$lib/server/recent";
-import { workspaceController, workspaceModel } from "$lib/server/mvc";
+import { workspaceController, workspaceModel, workspaceService } from "$lib/server/mvc";
 
 export const GET: RequestHandler = async () => {
   const [candidates, recent, defaultProjectDir] = await Promise.all([
@@ -35,6 +35,12 @@ export const POST: RequestHandler = async ({ request }) => {
   if (action === "refresh") {
     const tree = await workspaceController.refresh();
     return json({ root: workspaceModel.root, tree });
+  }
+  if (action === "flat") {
+    if (!workspaceModel.root) return json({ error: "No workspace open" }, { status: 400 });
+    workspaceService.invalidateGitignore(workspaceModel.root);
+    const files = await workspaceService.listFlat(workspaceModel.root);
+    return json({ files });
   }
   if (action === "close") {
     workspaceController.close();

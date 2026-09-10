@@ -12,6 +12,7 @@
   import IconClipboard from "@tabler/icons-svelte/icons/clipboard";
   import IconRoute from "@tabler/icons-svelte/icons/route";
   import IconEdit from "@tabler/icons-svelte/icons/edit";
+  import IconLinkPlus from "@tabler/icons-svelte/icons/link-plus";
   import IconX from "@tabler/icons-svelte/icons/x";
   import { fly, fade } from "svelte/transition";
   import { appState } from "$lib/state.svelte";
@@ -150,6 +151,14 @@
     pendingDelete = node;
   }
 
+  function addToContext(node: TreeNode) {
+    if (node.kind !== "file") return;
+    if (!appState.chatContextFiles.includes(node.path)) {
+      appState.chatContextFiles = [...appState.chatContextFiles, node.path];
+    }
+    appState.showToast(`Added ${node.name} to context`, "info");
+  }
+
   function closeConfirm() {
     if (deleting) return;
     pendingDelete = null;
@@ -284,6 +293,12 @@
         <IconFocusCentered size={14} stroke={1.75} />
         Reveal in finder
       </button>
+      {#if node.kind === "file"}
+        <button type="button" class="menu-item" onclick={() => { addToContext(node); closeContext(); }}>
+          <IconLinkPlus size={14} stroke={1.75} />
+          Add to context
+        </button>
+      {/if}
       <div class="menu-divider"></div>
       <button type="button" class="menu-item" onclick={() => { cut(node); closeContext(); }}>
         <IconCut size={14} stroke={1.75} />

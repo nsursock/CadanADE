@@ -81,6 +81,8 @@ class AppState {
   toast = $state<{ text: string; variant: string } | null>(null);
   settingsOpen = $state(false);
   fileClipboard = $state<{ path: string; operation: "cut" | "copy" } | null>(null);
+  /** Files added to chat context from outside ChatView (e.g. file browser context menu). */
+  chatContextFiles = $state<string[]>([]);
   selectedModelId = $state("openrouter/free");
   workerModelId = $state("openrouter/free");
   agentMode = $state<"normal" | "thrift">("normal");
