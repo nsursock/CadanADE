@@ -12,7 +12,7 @@
   import IconFolderOpen from "@tabler/icons-svelte/icons/folder-open";
   import { appState } from "$lib/state.svelte";
   import { rememberWorkspace } from "$lib/recent-workspaces";
-  import { countUp, playLandingIntro, pulseConsole, typewriter } from "$lib/motion/landing";
+  import { countUp, diveTransition, playLandingIntro, pulseConsole, typewriter } from "$lib/motion/landing";
 
   let path = $state("");
   let selected = $state("");
@@ -111,13 +111,18 @@
       if (!res.ok) throw new Error(data.error ?? "Failed to open");
       rememberWorkspace(data.root);
       recent = [data.root, ...recent.filter((p) => p !== data.root)].slice(0, 12);
-      appState.workspaceRoot = data.root;
-      appState.tree = data.tree ?? [];
       appState.showToast("Workspace linked", "success");
+      diveTransition(rootEl, {
+        onComplete: () => {
+          appState.workspaceRoot = data.root;
+          appState.tree = data.tree ?? [];
+          appState.treeLoading = false;
+          busy = false;
+        },
+      });
     } catch (e) {
       appState.workspaceError = e instanceof Error ? e.message : "Open failed";
       appState.showToast(appState.workspaceError, "error");
-    } finally {
       busy = false;
       appState.treeLoading = false;
     }
@@ -154,13 +159,17 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Create failed");
       rememberWorkspace(data.root);
-      appState.workspaceRoot = data.root;
-      appState.tree = data.tree ?? [];
       appState.showToast(`Created ${name}`, "success");
+      diveTransition(rootEl, {
+        onComplete: () => {
+          appState.workspaceRoot = data.root;
+          appState.tree = data.tree ?? [];
+          creating = false;
+        },
+      });
     } catch (e) {
       appState.workspaceError = e instanceof Error ? e.message : "Create failed";
       appState.showToast(appState.workspaceError, "error");
-    } finally {
       creating = false;
     }
   }
