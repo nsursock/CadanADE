@@ -108,6 +108,8 @@
     appState.tree = [];
     appState.tabs = [];
     appState.activePath = null;
+    appState.clearChatSessions();
+    appState.clearTerminalSessions();
   }
 </script>
 
@@ -155,7 +157,7 @@
               onmousedown={() => (drag = "t")}
             ></button>
             <div class="terminal-wrap min-h-0" style="height: {termH}px; flex: 0 0 {termH}px">
-              <Terminal bind:open={termOpen} onClose={() => (termOpen = false)} />
+              <Terminal onClose={() => (termOpen = false)} />
             </div>
           {:else}
             <button

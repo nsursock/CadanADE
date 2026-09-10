@@ -27,6 +27,8 @@
       </span>
     {/if}
     <span class="status-bar-item">{appState.themeId}</span>
-    <span class="feature-pill text-[0.65rem] py-0.5 px-2">{appState.tabs.length} tabs</span>
+    <span class="feature-pill text-[0.65rem] py-0.5 px-2"
+      >{appState.tabs.length} files · {appState.chatSessions.length} chats</span
+    >
   </div>
 </footer>

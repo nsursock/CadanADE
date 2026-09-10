@@ -1,5 +1,62 @@
 import type { ChatDisplayMode, ChatMessage, ChatPart, OpenTab, ThemeId, TreeNode, ToolCallCard } from "@cadan/core";
 
+export type SessionUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  turns: number;
+};
+
+export type TurnUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  agentMode: string;
+};
+
+export type ChatSessionTab = {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  draft: string;
+  /** Agent runtime session id (same as id once created on server). */
+  sessionId: string | null;
+  streaming: boolean;
+  status: string | null;
+  pendingApproval: { toolCallId: string; toolName: string; args: unknown } | null;
+  openRouterSessionId: string | null;
+  turnUsage: TurnUsage | null;
+  sessionUsage: SessionUsage;
+};
+
+export type TerminalSessionTab = {
+  id: string;
+  label: string;
+  alive: boolean;
+};
+
+function emptyUsage(): SessionUsage {
+  return { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0, turns: 0 };
+}
+
+function makeChatTab(sessionId: string, index: number): ChatSessionTab {
+  return {
+    id: sessionId,
+    title: `Chat ${index}`,
+    messages: [],
+    draft: "",
+    sessionId,
+    streaming: false,
+    status: null,
+    pendingApproval: null,
+    openRouterSessionId: null,
+    turnUsage: null,
+    sessionUsage: emptyUsage(),
+  };
+}
+
 class AppState {
   themeId = $state<ThemeId>("retrowave");
   threeBackground = $state(false);
@@ -13,12 +70,13 @@ class AppState {
   tabs = $state<OpenTab[]>([]);
   activePath = $state<string | null>(null);
 
-  messages = $state<ChatMessage[]>([]);
-  chatStreaming = $state(false);
-  chatStatus = $state<string | null>(null);
-  sessionId = $state<string | null>(null);
-  pendingApproval = $state<{ toolCallId: string; toolName: string; args: unknown } | null>(null);
+  chatSessions = $state<ChatSessionTab[]>([]);
+  activeChatId = $state<string | null>(null);
   chatDisplayMode = $state<ChatDisplayMode>("compact");
+
+  terminalSessions = $state<TerminalSessionTab[]>([]);
+  activeTerminalId = $state<string | null>(null);
+  private terminalSeq = 0;
 
   toast = $state<{ text: string; variant: string } | null>(null);
   settingsOpen = $state(false);
@@ -28,25 +86,38 @@ class AppState {
   agentMode = $state<"normal" | "thrift">("normal");
   hasProviderKey = $state(false);
 
-  /** OpenRouter A/B accounting for the active chat session. */
-  openRouterSessionId = $state<string | null>(null);
-  turnUsage = $state<{
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-    costUsd: number;
-    agentMode: string;
-  } | null>(null);
-  sessionUsage = $state({
-    promptTokens: 0,
-    completionTokens: 0,
-    totalTokens: 0,
-    costUsd: 0,
-    turns: 0,
-  });
-
   get activeTab(): OpenTab | null {
     return this.tabs.find((t) => t.path === this.activePath) ?? null;
+  }
+
+  get activeChat(): ChatSessionTab | null {
+    return this.chatSessions.find((c) => c.id === this.activeChatId) ?? null;
+  }
+
+  /** Active-session mirrors used by StatusBar and ChatView. */
+  get messages() {
+    return this.activeChat?.messages ?? [];
+  }
+  get chatStreaming() {
+    return this.activeChat?.streaming ?? false;
+  }
+  get chatStatus() {
+    return this.activeChat?.status ?? null;
+  }
+  get sessionId() {
+    return this.activeChat?.sessionId ?? null;
+  }
+  get pendingApproval() {
+    return this.activeChat?.pendingApproval ?? null;
+  }
+  get openRouterSessionId() {
+    return this.activeChat?.openRouterSessionId ?? null;
+  }
+  get turnUsage() {
+    return this.activeChat?.turnUsage ?? null;
+  }
+  get sessionUsage() {
+    return this.activeChat?.sessionUsage ?? emptyUsage();
   }
 
   showToast(text: string, variant = "info") {
@@ -56,40 +127,163 @@ class AppState {
     }, 2800);
   }
 
-  applyUsage(data: Record<string, unknown> | undefined) {
-    if (!data) return;
+  chatById(id: string | null | undefined): ChatSessionTab | null {
+    if (!id) return null;
+    return this.chatSessions.find((c) => c.id === id || c.sessionId === id) ?? null;
+  }
+
+  bumpChats() {
+    this.chatSessions = [...this.chatSessions];
+  }
+
+  setActiveChat(id: string) {
+    if (this.chatSessions.some((c) => c.id === id)) this.activeChatId = id;
+  }
+
+  addChatSession(sessionId: string) {
+    const tab = makeChatTab(sessionId, this.chatSessions.length + 1);
+    this.chatSessions = [...this.chatSessions, tab];
+    this.activeChatId = tab.id;
+    return tab;
+  }
+
+  removeChatSession(id: string) {
+    const idx = this.chatSessions.findIndex((c) => c.id === id);
+    if (idx < 0) return;
+    const next = this.chatSessions.filter((c) => c.id !== id);
+    this.chatSessions = next;
+    if (this.activeChatId === id) {
+      this.activeChatId = next[Math.min(idx, next.length - 1)]?.id ?? null;
+    }
+  }
+
+  clearChatSessions() {
+    this.chatSessions = [];
+    this.activeChatId = null;
+  }
+
+  get activeTerminal(): TerminalSessionTab | null {
+    return this.terminalSessions.find((t) => t.id === this.activeTerminalId) ?? null;
+  }
+
+  ensureTerminalSession() {
+    if (this.terminalSessions.length > 0) return;
+    this.addTerminalSession();
+  }
+
+  addTerminalSession() {
+    this.terminalSeq += 1;
+    const tab: TerminalSessionTab = {
+      id: `ui-term-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      label: `Terminal ${this.terminalSeq}`,
+      alive: false,
+    };
+    this.terminalSessions = [...this.terminalSessions, tab];
+    this.activeTerminalId = tab.id;
+    return tab;
+  }
+
+  setActiveTerminal(id: string) {
+    if (this.terminalSessions.some((t) => t.id === id)) this.activeTerminalId = id;
+  }
+
+  /** Same pattern as removeChatSession — drop tab and move active if needed. */
+  removeTerminalSession(id: string) {
+    const idx = this.terminalSessions.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const next = this.terminalSessions.filter((t) => t.id !== id);
+    this.terminalSessions = next;
+    if (this.activeTerminalId === id) {
+      this.activeTerminalId = next[Math.min(idx, next.length - 1)]?.id ?? null;
+    }
+  }
+
+  clearTerminalSessions() {
+    this.terminalSessions = [];
+    this.activeTerminalId = null;
+    this.terminalSeq = 0;
+  }
+
+  setTerminalAlive(id: string, alive: boolean) {
+    const tab = this.terminalSessions.find((t) => t.id === id);
+    if (!tab || tab.alive === alive) return;
+    tab.alive = alive;
+    this.terminalSessions = [...this.terminalSessions];
+  }
+
+  setChatMessages(sessionKey: string, messages: ChatMessage[]) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    chat.messages = messages;
+    this.bumpChats();
+  }
+
+  setChatDraft(sessionKey: string, draft: string) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    chat.draft = draft;
+  }
+
+  setChatStreaming(sessionKey: string, streaming: boolean, status: string | null = null) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    chat.streaming = streaming;
+    chat.status = status;
+    this.bumpChats();
+  }
+
+  setChatPendingApproval(
+    sessionKey: string,
+    pending: ChatSessionTab["pendingApproval"],
+  ) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    chat.pendingApproval = pending;
+    this.bumpChats();
+  }
+
+  maybeTitleFromUserText(sessionKey: string, text: string) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    if (chat.messages.some((m) => m.role === "user")) return;
+    const trimmed = text.trim().replace(/\s+/g, " ");
+    if (!trimmed) return;
+    chat.title = trimmed.length > 28 ? `${trimmed.slice(0, 28)}…` : trimmed;
+  }
+
+  applyUsage(sessionKey: string, data: Record<string, unknown> | undefined) {
+    const chat = this.chatById(sessionKey);
+    if (!chat || !data) return;
     const promptTokens = Number(data.promptTokens ?? 0);
     const completionTokens = Number(data.completionTokens ?? 0);
     const totalTokens = Number(data.totalTokens ?? promptTokens + completionTokens);
     const costUsd = Number(data.costUsd ?? 0);
     const agentMode = String(data.agentMode ?? this.agentMode);
     if (typeof data.openRouterSessionId === "string") {
-      this.openRouterSessionId = data.openRouterSessionId;
+      chat.openRouterSessionId = data.openRouterSessionId;
     }
-    this.turnUsage = { promptTokens, completionTokens, totalTokens, costUsd, agentMode };
-    this.sessionUsage = {
-      promptTokens: this.sessionUsage.promptTokens + promptTokens,
-      completionTokens: this.sessionUsage.completionTokens + completionTokens,
-      totalTokens: this.sessionUsage.totalTokens + totalTokens,
-      costUsd: this.sessionUsage.costUsd + costUsd,
-      turns: this.sessionUsage.turns + 1,
+    chat.turnUsage = { promptTokens, completionTokens, totalTokens, costUsd, agentMode };
+    chat.sessionUsage = {
+      promptTokens: chat.sessionUsage.promptTokens + promptTokens,
+      completionTokens: chat.sessionUsage.completionTokens + completionTokens,
+      totalTokens: chat.sessionUsage.totalTokens + totalTokens,
+      costUsd: chat.sessionUsage.costUsd + costUsd,
+      turns: chat.sessionUsage.turns + 1,
     };
+    this.bumpChats();
   }
 
-  resetUsage() {
-    this.turnUsage = null;
-    this.openRouterSessionId = null;
-    this.sessionUsage = {
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      costUsd: 0,
-      turns: 0,
-    };
+  resetUsage(sessionKey?: string) {
+    const chat = sessionKey ? this.chatById(sessionKey) : this.activeChat;
+    if (!chat) return;
+    chat.turnUsage = null;
+    chat.openRouterSessionId = null;
+    chat.sessionUsage = emptyUsage();
+    this.bumpChats();
   }
 
-  private lastAssistant(): ChatMessage | null {
-    return [...this.messages].reverse().find((m) => m.role === "assistant") ?? null;
+  private lastAssistant(chat: ChatSessionTab): ChatMessage | null {
+    return [...chat.messages].reverse().find((m) => m.role === "assistant") ?? null;
   }
 
   private syncMessageDerived(msg: ChatMessage) {
@@ -102,33 +296,35 @@ class AppState {
       .map((p) => p.tool);
   }
 
-  private bumpMessages() {
-    this.messages = [...this.messages];
-  }
-
-  appendReasoning(text: string) {
-    const msg = this.lastAssistant();
-    if (!msg || !text) return;
+  appendReasoning(sessionKey: string, text: string) {
+    const chat = this.chatById(sessionKey);
+    if (!chat || !text) return;
+    const msg = this.lastAssistant(chat);
+    if (!msg) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
     if (last?.kind === "reasoning") last.text += text;
     else msg.parts.push({ kind: "reasoning", id: `r-${Date.now()}-${msg.parts.length}`, text });
-    this.bumpMessages();
+    this.bumpChats();
   }
 
-  appendText(text: string) {
-    const msg = this.lastAssistant();
-    if (!msg || !text) return;
+  appendText(sessionKey: string, text: string) {
+    const chat = this.chatById(sessionKey);
+    if (!chat || !text) return;
+    const msg = this.lastAssistant(chat);
+    if (!msg) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
     if (last?.kind === "text") last.text += text;
     else msg.parts.push({ kind: "text", id: `t-${Date.now()}-${msg.parts.length}`, text });
     this.syncMessageDerived(msg);
-    this.bumpMessages();
+    this.bumpChats();
   }
 
-  upsertTool(card: ToolCallCard) {
-    const msg = this.lastAssistant();
+  upsertTool(sessionKey: string, card: ToolCallCard) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    const msg = this.lastAssistant(chat);
     if (!msg) return;
     msg.parts ??= [];
     const existing = msg.parts.find((p) => p.kind === "tool" && p.tool.id === card.id);
@@ -138,7 +334,7 @@ class AppState {
       msg.parts.push({ kind: "tool", id: `tool-${Date.now()}-${msg.parts.length}`, tool: card });
     }
     this.syncMessageDerived(msg);
-    this.bumpMessages();
+    this.bumpChats();
   }
 }
 

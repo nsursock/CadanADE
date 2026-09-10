@@ -1,27 +1,75 @@
 import type { RequestHandler } from "./$types";
-import { agentRuntime, chatModel, workspaceModel } from "$lib/server/mvc";
+import {
+  agentRuntime,
+  clearChatModels,
+  deleteChatModel,
+  getChatModel,
+  workspaceModel,
+} from "$lib/server/mvc";
 import type { AgentEvent } from "@cadan/core/server";
 import { hasProviderKey } from "$lib/server/provider-config";
 
 export const GET: RequestHandler = async () => {
+  const activeId = agentRuntime.getActiveId();
+  const model = activeId ? getChatModel(activeId) : null;
   return Response.json({
-    messages: chatModel.messages,
-    streaming: chatModel.streaming,
-    status: chatModel.status,
-    pendingApproval: chatModel.pendingApproval,
+    sessions: agentRuntime.listSessions().map((id) => ({
+      sessionId: id,
+      streaming: getChatModel(id).streaming,
+    })),
+    activeId,
+    messages: model?.messages ?? [],
+    streaming: model?.streaming ?? false,
+    status: model?.status ?? null,
+    pendingApproval: model?.pendingApproval ?? null,
   });
 };
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json();
+
+  if (body.action === "create") {
+    const session = agentRuntime.createSession();
+    getChatModel(session.id);
+    return Response.json({ ok: true, sessionId: session.id });
+  }
+
+  if (body.action === "list") {
+    return Response.json({
+      ok: true,
+      sessions: agentRuntime.listSessions(),
+      activeId: agentRuntime.getActiveId(),
+    });
+  }
+
+  if (body.action === "switch") {
+    const sessionId = String(body.sessionId ?? "");
+    if (!sessionId || !agentRuntime.setActive(sessionId)) {
+      return Response.json({ error: "Unknown session" }, { status: 404 });
+    }
+    return Response.json({ ok: true, sessionId });
+  }
+
+  if (body.action === "delete") {
+    const sessionId = String(body.sessionId ?? "");
+    if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
+    agentRuntime.deleteSession(sessionId);
+    deleteChatModel(sessionId);
+    return Response.json({ ok: true, activeId: agentRuntime.getActiveId() });
+  }
+
   if (body.action === "clear") {
-    chatModel.clear();
+    const sessionId = String(body.sessionId ?? agentRuntime.getActiveId() ?? "");
+    if (sessionId) getChatModel(sessionId).clear();
     return Response.json({ ok: true });
   }
 
   if (body.action === "reset") {
-    chatModel.clear();
-    const session = agentRuntime.resetSession();
+    const prev = body.sessionId ? String(body.sessionId) : undefined;
+    if (prev) deleteChatModel(prev);
+    else clearChatModels();
+    const session = agentRuntime.resetSession(prev);
+    getChatModel(session.id);
     return Response.json({ ok: true, sessionId: session.id });
   }
 
@@ -38,6 +86,15 @@ export const POST: RequestHandler = async ({ request }) => {
     );
   }
 
+  let sessionId = body.sessionId ? String(body.sessionId) : undefined;
+  if (sessionId && !agentRuntime.getSessionById(sessionId)) {
+    return Response.json({ error: "Unknown chat session" }, { status: 404 });
+  }
+  if (!sessionId) {
+    sessionId = agentRuntime.getSession().id;
+  }
+
+  const chatModel = getChatModel(sessionId);
   chatModel.add("user", text);
   chatModel.add("assistant", "");
   chatModel.setStreaming(true);
@@ -52,12 +109,12 @@ export const POST: RequestHandler = async ({ request }) => {
       };
 
       try {
-        await agentRuntime.runTurn(root, text, send);
+        await agentRuntime.runTurn(root, text, send, sessionId);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         send({
           type: "error",
-          sessionId: "unknown",
+          sessionId: sessionId ?? "unknown",
           timestamp: Date.now(),
           data: { message },
         });
@@ -79,6 +136,7 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 
 function applyLocal(ev: AgentEvent) {
+  const chatModel = getChatModel(ev.sessionId);
   switch (ev.type) {
     case "text.delta":
       chatModel.appendText(String(ev.data?.text ?? ""));

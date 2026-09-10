@@ -33,19 +33,60 @@ export function createAgentRuntime(workspace: WorkspaceService) {
     getSessionById(id: string) {
       return sessions.get(id) ?? null;
     },
+    getActiveId() {
+      return activeId;
+    },
+    listSessions() {
+      return [...sessions.keys()];
+    },
+    createSession() {
+      const session = new AgentSession();
+      sessions.set(session.id, session);
+      activeId = session.id;
+      return session;
+    },
+    setActive(id: string) {
+      if (!sessions.has(id)) return false;
+      activeId = id;
+      return true;
+    },
+    deleteSession(id: string) {
+      const session = sessions.get(id);
+      if (!session) return false;
+      session.cancel();
+      sessions.delete(id);
+      if (activeId === id) {
+        activeId = sessions.keys().next().value ?? null;
+      }
+      return true;
+    },
     /** Fresh AgentSession so OpenRouter session_id tags stay comparable across A/B arms. */
-    resetSession() {
-      if (activeId) {
-        sessions.get(activeId)?.cancel();
-        sessions.delete(activeId);
+    resetSession(sessionId?: string) {
+      const target = sessionId ?? activeId;
+      if (target) {
+        sessions.get(target)?.cancel();
+        sessions.delete(target);
       }
       const session = new AgentSession();
       sessions.set(session.id, session);
       activeId = session.id;
       return session;
     },
-    async runTurn(root: string, text: string, onEvent: (ev: AgentEvent) => void) {
-      const session = getOrCreateSession();
+    async runTurn(
+      root: string,
+      text: string,
+      onEvent: (ev: AgentEvent) => void,
+      sessionId?: string,
+    ) {
+      let session: AgentSession;
+      if (sessionId) {
+        const existing = sessions.get(sessionId);
+        if (!existing) throw new Error(`Unknown chat session: ${sessionId}`);
+        session = existing;
+        activeId = session.id;
+      } else {
+        session = getOrCreateSession();
+      }
       const cfg = getProviderConfig();
       const llm = provider();
       const engine = new AgentEngine({
