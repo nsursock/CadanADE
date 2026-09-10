@@ -4,6 +4,7 @@ import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
+import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import type { Extension } from "@codemirror/state";
@@ -69,6 +70,7 @@ export function languageSupportForPath(path: string | null | undefined): Extensi
   if (/\.(md|mdx)$/.test(lower)) return markdown();
   if (/\.(html|htm|svelte|vue)$/.test(lower)) return html({ selfClosingTags: true });
   if (/\.(css|scss)$/.test(lower)) return css();
+  if (/\.(ya?ml)$/.test(lower)) return yaml();
 
   return [];
 }
