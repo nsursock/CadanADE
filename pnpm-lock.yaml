@@ -14,6 +14,9 @@ importers:
 
   ../ScifiUI/packages/core:
     dependencies:
+      gsap:
+        specifier: ^3.12.0
+        version: 3.15.0
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.3
@@ -87,9 +90,6 @@ importers:
       codemirror:
         specifier: ^6.0.1
         version: 6.0.2
-      gsap:
-        specifier: ^3.12.0
-        version: 3.15.0
       three:
         specifier: ^0.170.0
         version: 0.170.0

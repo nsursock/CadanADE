@@ -57,7 +57,9 @@
     isDesktop = typeof window !== "undefined" && !!window.cadan;
     if (rootEl) playLandingIntro(rootEl);
     typewriter(tagline, (s) => (typed = s), () => (typingDone = true));
-    countUp({ models: 50, themes: 9, tools: 7 }, (v) => (stats = v));
+    countUp({ models: 50, themes: 9, tools: 7 }, (v) => {
+      stats = { models: v.models, themes: v.themes, tools: v.tools };
+    });
     void discover();
 
     const unsub = window.cadan?.onWorkspaceOpened((p) => {

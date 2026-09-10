@@ -26,6 +26,7 @@ Key web paths:
 - `apps/web/src/lib/server/` — provider config, agent runtime
 - `apps/web/src/routes/api/` — workspace, files, chat, settings, models
 - `packages/core/src/agent/` — engine, session, OpenRouter provider, tools
+- Motion: GSAP via `@scifiui/core/js` (`enterShell`, `playLandingIntro`, …) — do not add a second GSAP helper layer
 
 ## Setup & build
 
