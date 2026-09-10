@@ -120,10 +120,9 @@ export function createAgentRuntime(workspace: WorkspaceService) {
       if (!cfg.apiKey) return null;
       const llm = provider();
       const system =
-        "You generate a 2-3 word title that describes what the user is asking about. " +
-        "Rules: exactly 2 or 3 words, no punctuation, no quotes, no articles (a/an/the), " +
-        "no filler (here's, this is, the user wants), no complete sentences. " +
-        "Output ONLY the title words, nothing else.";
+        "Your reply must be exactly 2 or 3 words. Nothing else. No reasoning. " +
+        "No full sentences. No explanation. Just 2-3 words that title the user's request. " +
+        "Example replies: 'Project Overview', 'Fix Login Bug', 'Run Python Files'.";
       const examples: ProviderMessage[] = [
         { role: "user", content: "What's this project about?" },
         { role: "assistant", content: "Project Overview" },
@@ -133,9 +132,10 @@ export function createAgentRuntime(workspace: WorkspaceService) {
         { role: "assistant", content: "Add Dark Mode" },
         { role: "user", content: "Refactor the database connection pooling code" },
         { role: "assistant", content: "Refactor DB Pooling" },
+        { role: "user", content: "run every py files in this repo" },
+        { role: "assistant", content: "Run Python Files" },
       ];
       let title = "";
-      let reasoning = "";
       try {
         for await (const ev of llm.chat(
           [
@@ -143,10 +143,9 @@ export function createAgentRuntime(workspace: WorkspaceService) {
             ...examples,
             { role: "user", content: userText.slice(0, 500) },
           ],
-          { model: cfg.model, temperature: 0.2, maxTokens: 20 },
+          { model: cfg.model, temperature: 0.2, maxTokens: 1000 },
         )) {
           if (ev.type === "text.delta") title += ev.text;
-          else if (ev.type === "reasoning.delta") reasoning += ev.text;
           else if (ev.type === "error") {
             console.error("[generateTitle] LLM error:", ev.message);
             return null;
@@ -156,18 +155,15 @@ export function createAgentRuntime(workspace: WorkspaceService) {
         console.error("[generateTitle] exception:", e instanceof Error ? e.message : e);
         return null;
       }
-      // Some free models put the answer in reasoning, not content
-      const raw = title.trim() || reasoning.trim();
+      const raw = title.trim();
       if (!raw) {
-        console.error("[generateTitle] empty response (title=%j reasoning=%j)", title, reasoning);
+        console.error("[generateTitle] empty content response");
         return null;
       }
       const cleaned = raw
         .replace(/^["']|["']$/g, "")
         .replace(/[.!?]$/g, "")
-        .replace(/^(here'?s|this is|the user wants|user wants)\s+/i, "")
         .split(/\s+/)
-        .filter((w) => !/^(a|an|the)$/i.test(w))
         .slice(0, 3)
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(" ");
