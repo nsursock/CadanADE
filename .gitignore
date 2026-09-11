@@ -1,6 +1,8 @@
 # Dependencies & builds
 node_modules/
 .pnpm-store/
+# Workspace root pnpm-lock.yaml is canonical; ignore nested app lockfiles
+apps/web/pnpm-lock.yaml
 dist/
 build/
 release/
