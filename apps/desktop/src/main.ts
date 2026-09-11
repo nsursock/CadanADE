@@ -6,6 +6,7 @@ const {
   dialog,
   ipcMain,
   shell,
+  session,
 } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
@@ -274,6 +275,18 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  // Packaged builds get a CSP. Dev keeps Vite HMR (needs unsafe-eval) — Electron
+  // warns about that in unpackaged runs only.
+  if (!isDev) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const headers = { ...details.responseHeaders };
+      headers["Content-Security-Policy"] = [
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:;",
+      ];
+      callback({ responseHeaders: headers });
+    });
+  }
+
   Menu.setApplicationMenu(buildMenu());
   try {
     const url = await startServer();

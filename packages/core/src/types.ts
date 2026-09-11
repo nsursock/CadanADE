@@ -27,7 +27,23 @@ export interface OpenTab {
   content: string;
   hash: string;
   dirty: boolean;
+  /** Last saved (or opened) content — used to highlight unsaved edits. */
+  savedContent: string;
 }
+
+/** Agent edit awaiting Accept / Reject review. */
+export interface PendingChange {
+  path: string;
+  kind: "edit" | "create";
+  /** Content before the agent change (empty for create). */
+  baseline: string;
+  baselineHash: string;
+  afterHash: string;
+  sessionId: string;
+}
+
+/** SSE payload without full baseline body (client may GET listPending). */
+export type PendingChangeMeta = Omit<PendingChange, "baseline">;
 
 export interface ToolCallCard {
   id: string;

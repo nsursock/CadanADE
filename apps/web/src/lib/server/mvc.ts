@@ -3,6 +3,8 @@ import {
   ChatModel,
   EditorController,
   EditorModel,
+  HistoryService,
+  PendingChangeStore,
   ThemeController,
   ThemeModel,
   WorkspaceController,
@@ -12,6 +14,8 @@ import {
 import { createAgentRuntime } from "./agent-runtime";
 
 const workspaceService = new WorkspaceService();
+export const pendingChangeStore = new PendingChangeStore();
+export const historyService = new HistoryService();
 
 export const themeModel = new ThemeModel();
 export const workspaceModel = new WorkspaceModel();
@@ -42,7 +46,12 @@ export const chatModel = new ChatModel();
 
 export const themeController = new ThemeController(themeModel);
 export const workspaceController = new WorkspaceController(workspaceModel, workspaceService);
-export const editorController = new EditorController(editorModel, workspaceService);
+export const editorController = new EditorController(
+  editorModel,
+  workspaceService,
+  pendingChangeStore,
+  historyService,
+);
 export const chatController = new ChatController(chatModel);
-export const agentRuntime = createAgentRuntime(workspaceService);
+export const agentRuntime = createAgentRuntime(workspaceService, pendingChangeStore);
 export { workspaceService };

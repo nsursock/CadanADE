@@ -5,6 +5,7 @@
   import ModeRail from "$lib/views/ModeRail.svelte";
   import WorkspacePicker from "$lib/views/WorkspacePicker.svelte";
   import FileTreeView from "$lib/views/FileTreeView.svelte";
+  import SideAuxPanel from "$lib/views/SideAuxPanel.svelte";
   import EditorView from "$lib/views/EditorView.svelte";
   import ChatView from "$lib/views/ChatView.svelte";
   import Terminal from "$lib/views/Terminal.svelte";
@@ -108,9 +109,10 @@
       existing.content = data.content;
       existing.hash = data.hash;
       existing.dirty = false;
+      existing.savedContent = data.content;
       appState.tabs = [...appState.tabs];
     } else {
-      appState.tabs = [...appState.tabs, { ...data, dirty: false }];
+      appState.tabs = [...appState.tabs, { ...data, dirty: false, savedContent: data.content }];
     }
     appState.activePath = data.path;
   }
@@ -152,8 +154,11 @@
       <ModeRail />
       <div class="split split-row flex-1 min-h-0 min-w-0 overflow-hidden gap-1">
         {#if filesOpen}
-          <div class="split-pane" style="flex: 0 1 {leftW}px; width: {leftW}px; min-width: {LEFT_MIN}px">
-            <FileTreeView onOpenFile={openFile} onClose={() => (filesOpen = false)} />
+          <div class="split-pane left-stack" style="flex: 0 1 {leftW}px; width: {leftW}px; min-width: {LEFT_MIN}px">
+            <div class="left-stack-tree min-h-0 flex-1 overflow-hidden">
+              <FileTreeView onOpenFile={openFile} onClose={() => (filesOpen = false)} />
+            </div>
+            <SideAuxPanel />
           </div>
           <button
             type="button"
@@ -232,5 +237,14 @@
   }
   .terminal-wrap {
     overflow: hidden;
+  }
+  .left-stack {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .left-stack-tree {
+    min-height: 0;
   }
 </style>

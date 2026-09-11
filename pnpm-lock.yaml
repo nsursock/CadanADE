@@ -78,6 +78,9 @@ importers:
       '@codemirror/language':
         specifier: ^6.10.0
         version: 6.12.4
+      '@codemirror/lint':
+        specifier: ^6.8.0
+        version: 6.9.7
       '@codemirror/state':
         specifier: ^6.5.0
         version: 6.7.4
@@ -90,6 +93,9 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.0
         version: 1.2.3
+      '@replit/codemirror-minimap':
+        specifier: ^0.5.2
+        version: 0.5.2(@codemirror/language@6.12.4)(@codemirror/lint@6.9.7)(@codemirror/state@6.7.4)(@codemirror/view@6.43.11)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)
       '@scifiui/core':
         specifier: workspace:*
         version: link:../../../ScifiUI/packages/core
@@ -488,6 +494,16 @@ packages:
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
+
+  '@replit/codemirror-minimap@0.5.2':
+    resolution: {integrity: sha512-eNAtpr0hOG09/5zqAQ5PkgZEb3V/MHi30zentCxiR73r+utR2m9yVMCpBmfsWbb8mWxUWhMGPiHxM5hFtnscQA==}
+    peerDependencies:
+      '@codemirror/language': ^6.9.1
+      '@codemirror/lint': ^6.4.2
+      '@codemirror/state': ^6.3.1
+      '@codemirror/view': ^6.21.3
+      '@lezer/common': ^1.1.0
+      '@lezer/highlight': ^1.1.6
 
   '@rollup/plugin-commonjs@29.0.3':
     resolution: {integrity: sha512-ZaOxZceP7SOUW7Lqw5IRVweSQYWaeIPnXIGLiB690EBA3FGJTO40EEr2L5yZplJWsgTCogILRSpcAe7+U0Otdg==}
@@ -2875,6 +2891,16 @@ snapshots:
       playwright: 1.63.0
 
   '@polka/url@1.0.0-next.29': {}
+
+  '@replit/codemirror-minimap@0.5.2(@codemirror/language@6.12.4)(@codemirror/lint@6.9.7)(@codemirror/state@6.7.4)(@codemirror/view@6.43.11)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)':
+    dependencies:
+      '@codemirror/language': 6.12.4
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      crelt: 1.0.7
 
   '@rollup/plugin-commonjs@29.0.3(rollup@4.63.1)':
     dependencies:

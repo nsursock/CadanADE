@@ -11,6 +11,7 @@ import { openRouterSessionId } from "./provider.js";
 import { AgentSession } from "./session.js";
 import { APPROVAL_REQUIRED, TOOL_SCHEMAS } from "./tools/schema.js";
 import { createToolHandlers } from "./tools/handlers.js";
+import type { PendingChangeStore } from "../services/pending-changes.js";
 import type { WorkspaceService } from "../services/workspace-service.js";
 import type { AgentMode } from "../settings/defaults.js";
 
@@ -88,6 +89,7 @@ export interface EngineOptions {
   keepRecentToolResults?: number;
   /** Workspace-relative file paths to inject as context before the user message. */
   contextFiles?: string[];
+  pendingChanges?: PendingChangeStore;
   emit: (event: AgentEvent) => void;
 }
 
@@ -509,6 +511,17 @@ export class AgentEngine {
               signal,
               onUsage: (u) => track(u),
               writtenThisTurn,
+              sessionId: session.id,
+              pendingChanges: this.opts.pendingChanges,
+              onPendingChange: (change) => {
+                const store = this.opts.pendingChanges;
+                emit(
+                  agentEvent("change.pending", session.id, {
+                    ...(store ? store.meta(change) : change),
+                    baseline: change.baseline,
+                  }),
+                );
+              },
             });
             emit(agentEvent("tool.result", session.id, { toolCallId, toolName: name, result }));
             session.messages.push({ role: "tool", tool_call_id: toolCallId, content: result });

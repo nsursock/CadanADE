@@ -10,12 +10,14 @@ export class EditorModel {
 
   open(tab: OpenTab) {
     const existing = this.tabs.find((t) => t.path === tab.path);
+    const savedContent = tab.savedContent ?? tab.content;
     if (existing) {
       existing.content = tab.content;
       existing.hash = tab.hash;
       existing.dirty = false;
+      existing.savedContent = savedContent;
     } else {
-      this.tabs = [...this.tabs, tab];
+      this.tabs = [...this.tabs, { ...tab, savedContent }];
     }
     this.activePath = tab.path;
   }
@@ -36,6 +38,7 @@ export class EditorModel {
     if (!tab) return;
     tab.hash = hash;
     tab.content = content;
+    tab.savedContent = content;
     tab.dirty = false;
   }
 

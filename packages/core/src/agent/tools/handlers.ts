@@ -1,3 +1,5 @@
+import type { PendingChange } from "../../types.js";
+import type { PendingChangeStore } from "../../services/pending-changes.js";
 import type { WorkspaceService } from "../../services/workspace-service.js";
 import type { AgentMode } from "../../settings/defaults.js";
 import { capCommandResult } from "../context-compact.js";
@@ -21,6 +23,43 @@ export interface ToolContext {
   onUsage?: (usage: ProviderUsage, role: "frontier" | "worker") => void;
   /** Paths written/created this turn — thrift must not block re-reads of them. */
   writtenThisTurn?: Set<string>;
+  sessionId?: string;
+  pendingChanges?: PendingChangeStore;
+  onPendingChange?: (change: PendingChange) => void;
+}
+
+function trackPending(
+  ctx: ToolContext,
+  input: {
+    path: string;
+    kind: "edit" | "create";
+    baseline: string;
+    baselineHash: string;
+    afterHash: string;
+  },
+) {
+  if (!ctx.pendingChanges || !ctx.sessionId) return;
+  const change = ctx.pendingChanges.register({
+    path: input.path,
+    kind: input.kind,
+    baseline: input.baseline,
+    baselineHash: input.baselineHash,
+    afterHash: input.afterHash,
+    sessionId: ctx.sessionId,
+  });
+  ctx.onPendingChange?.(change);
+}
+
+async function readBaseline(
+  ctx: ToolContext,
+  rel: string,
+): Promise<{ kind: "edit" | "create"; baseline: string; baselineHash: string }> {
+  try {
+    const file = await ctx.workspace.readFile(ctx.root, rel);
+    return { kind: "edit", baseline: file.content, baselineHash: file.hash };
+  } catch {
+    return { kind: "create", baseline: "", baselineHash: "" };
+  }
 }
 
 const DEFAULT_READ_THRESHOLD = Number(process.env.CADAN_READ_LINE_THRESHOLD) || 350;
@@ -112,8 +151,16 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const path = String(args.path ?? "");
       const content = String(args.content ?? "");
       const expectedHash = args.expectedHash != null ? String(args.expectedHash) : undefined;
+      const before = await readBaseline(ctx, path);
       const saved = await ctx.workspace.writeFile(ctx.root, path, content, expectedHash);
       ctx.writtenThisTurn?.add(normalizeToolPath(saved.path));
+      trackPending(ctx, {
+        path: saved.path,
+        kind: before.kind,
+        baseline: before.baseline,
+        baselineHash: before.baselineHash,
+        afterHash: saved.hash,
+      });
       return JSON.stringify({ path: saved.path, hash: saved.hash, bytes: content.length });
     },
     async create_file(args, ctx) {
@@ -121,6 +168,13 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const content = String(args.content ?? "");
       const saved = await ctx.workspace.createFile(ctx.root, path, content);
       ctx.writtenThisTurn?.add(normalizeToolPath(saved.path));
+      trackPending(ctx, {
+        path: saved.path,
+        kind: "create",
+        baseline: "",
+        baselineHash: "",
+        afterHash: saved.hash,
+      });
       return JSON.stringify({ path: saved.path, hash: saved.hash });
     },
     async edit_file(args, ctx) {
@@ -129,8 +183,16 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const newString = String(args.newString ?? "");
       const expectedHash = args.expectedHash != null ? String(args.expectedHash) : undefined;
       const replaceAll = args.replaceAll === true;
+      const before = await readBaseline(ctx, path);
       const saved = await ctx.workspace.editFile(ctx.root, path, oldString, newString, expectedHash, replaceAll);
       ctx.writtenThisTurn?.add(normalizeToolPath(saved.path));
+      trackPending(ctx, {
+        path: saved.path,
+        kind: "edit",
+        baseline: before.baseline,
+        baselineHash: before.baselineHash,
+        afterHash: saved.hash,
+      });
       return JSON.stringify({
         path: saved.path,
         hash: saved.hash,

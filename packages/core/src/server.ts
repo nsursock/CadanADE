@@ -9,11 +9,28 @@ export {
   ThemeController,
   ChatController,
 } from "./index.js";
-export type { ThemeId, AppMode, TreeNode, OpenTab, ChatMessage, FilePayload } from "./index.js";
+export type {
+  ThemeId,
+  AppMode,
+  TreeNode,
+  OpenTab,
+  PendingChange,
+  PendingChangeMeta,
+  ChatMessage,
+  FilePayload,
+} from "./index.js";
 
 export { WorkspaceController } from "./controllers/workspace-controller.js";
 export { EditorController } from "./controllers/editor-controller.js";
 export { WorkspaceService } from "./services/workspace-service.js";
+export { PendingChangeStore } from "./services/pending-changes.js";
+export { HistoryService } from "./services/history-service.js";
+export type {
+  HistoryReason,
+  HistorySnapshotOpts,
+  HistorySnapshotResult,
+  HistoryEntry,
+} from "./services/history-service.js";
 export {
   listCandidateRoots,
   defaultProjectParent,

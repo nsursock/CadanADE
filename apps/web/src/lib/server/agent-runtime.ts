@@ -4,12 +4,13 @@ import {
   OpenRouterProvider,
   encodeSSE,
   type AgentEvent,
+  type PendingChangeStore,
   type ProviderMessage,
   type WorkspaceService,
 } from "@cadan/core/server";
 import { getProviderConfig } from "./provider-config";
 
-export function createAgentRuntime(workspace: WorkspaceService) {
+export function createAgentRuntime(workspace: WorkspaceService, pendingChanges?: PendingChangeStore) {
   const sessions = new Map<string, AgentSession>();
   let activeId: string | null = null;
 
@@ -104,6 +105,7 @@ export function createAgentRuntime(workspace: WorkspaceService) {
             : undefined,
         emit: onEvent,
         contextFiles,
+        pendingChanges,
       });
       await engine.run(session, text);
       return session;

@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import type { TreeNode } from "../types.js";
 
-const SKIP = new Set([".git", "node_modules", ".DS_Store", "dist", ".svelte-kit", "build"]);
+const SKIP = new Set([".git", ".cadan", "node_modules", ".DS_Store", "dist", ".svelte-kit", "build"]);
 const DENY = [/rm\s+-rf\s+\//i, /sudo\b/i, /mkfs/i, /dd\s+if=/i, /:\(\)\s*\{/];
 
 /** Minimal .gitignore pattern matcher. */

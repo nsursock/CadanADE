@@ -1,4 +1,13 @@
-import type { ChatDisplayMode, ChatMessage, ChatPart, OpenTab, ThemeId, TreeNode, ToolCallCard } from "@cadan/core";
+import type {
+  ChatDisplayMode,
+  ChatMessage,
+  ChatPart,
+  OpenTab,
+  PendingChange,
+  ThemeId,
+  TreeNode,
+  ToolCallCard,
+} from "@cadan/core";
 
 export type SessionUsage = {
   promptTokens: number;
@@ -75,6 +84,8 @@ class AppState {
 
   tabs = $state<OpenTab[]>([]);
   activePath = $state<string | null>(null);
+  /** Agent edits awaiting Accept / Reject. */
+  pendingChanges = $state<PendingChange[]>([]);
 
   chatSessions = $state<ChatSessionTab[]>([]);
   activeChatId = $state<string | null>(null);
@@ -93,9 +104,35 @@ class AppState {
   workerModelId = $state("openrouter/free");
   agentMode = $state<"normal" | "thrift">("normal");
   hasProviderKey = $state(false);
+  /** Request editor scroll/focus to 1-based line (consumed by EditorView). */
+  scrollToLine = $state<number | null>(null);
+  /** Bump to refresh timeline after save/accept. */
+  historyEpoch = $state(0);
+  /** Bump when tab content must be forced into CodeMirror (e.g. timeline restore). */
+  editorDocNonce = $state(0);
+  /** Imperative bridge so EditorView can apply content without relying on $effect timing. */
+  private editorSetDoc: ((path: string, content: string) => void) | null = null;
 
   get activeTab(): OpenTab | null {
     return this.tabs.find((t) => t.path === this.activePath) ?? null;
+  }
+
+  get activePending(): PendingChange | null {
+    if (!this.activePath) return null;
+    return this.pendingChanges.find((p) => p.path === this.activePath) ?? null;
+  }
+
+  setPendingChanges(pending: PendingChange[]) {
+    this.pendingChanges = pending;
+  }
+
+  upsertPendingChange(change: PendingChange) {
+    const rest = this.pendingChanges.filter((p) => p.path !== change.path);
+    this.pendingChanges = [...rest, change];
+  }
+
+  removePendingChange(path: string) {
+    this.pendingChanges = this.pendingChanges.filter((p) => p.path !== path);
   }
 
   get activeChat(): ChatSessionTab | null {
@@ -133,6 +170,40 @@ class AppState {
     setTimeout(() => {
       if (this.toast?.text === text) this.toast = null;
     }, 2800);
+  }
+
+  requestScrollToLine(line: number) {
+    this.scrollToLine = line;
+  }
+
+  bumpHistory() {
+    this.historyEpoch += 1;
+  }
+
+  /** Replace open-tab content and force the editor to adopt it. */
+  applyTabContent(path: string, content: string, opts?: { dirty?: boolean; hash?: string; resetSaved?: boolean }) {
+    const dirty = opts?.dirty ?? true;
+    const existing = this.tabs.find((t) => t.path === path);
+    if (existing) {
+      existing.content = content;
+      existing.dirty = dirty;
+      if (opts?.hash != null) existing.hash = opts.hash;
+      if (opts?.resetSaved || !dirty) existing.savedContent = content;
+      this.tabs = [...this.tabs];
+    } else {
+      this.tabs = [
+        ...this.tabs,
+        { path, content, hash: opts?.hash ?? "", dirty, savedContent: content },
+      ];
+    }
+    this.activePath = path;
+    this.editorDocNonce += 1;
+    // Apply immediately to the live CodeMirror instance (effect sync can race / no-op).
+    this.editorSetDoc?.(path, content);
+  }
+
+  bindEditorSetDoc(fn: ((path: string, content: string) => void) | null) {
+    this.editorSetDoc = fn;
   }
 
   chatById(id: string | null | undefined): ChatSessionTab | null {

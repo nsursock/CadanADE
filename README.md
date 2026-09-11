@@ -7,7 +7,10 @@ CadanADE is a SvelteKit workspace IDE with file tree, CodeMirror editing, OpenRo
 ## Features
 
 - Open a local folder as a workspace (recent + discovered projects)
-- File tree, tabs, and CodeMirror 6 editing with save
+- File tree, tabs, and CodeMirror 6 editing with save and minimap
+- Agent edit review: green/red highlights with Accept / Reject (per file + Accept all / Reject all in chat)
+- Local history: shadow git under `.cadan/history.git` on save and Accept (does not touch the project `.git`)
+
 - Streaming agent chat (OpenRouter) with tool calls and approval gates
 - Settings console: provider key, themes, performance lite mode
 - Optional Electron app wrapping the same SvelteKit server

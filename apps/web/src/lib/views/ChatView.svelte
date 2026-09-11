@@ -174,6 +174,19 @@
         appState.setChatPendingApproval(key, null);
         void refreshTree();
         break;
+      case "change.pending":
+        if (ev.data?.path) {
+          appState.upsertPendingChange({
+            path: String(ev.data.path),
+            kind: ev.data.kind === "create" ? "create" : "edit",
+            baseline: String(ev.data.baseline ?? ""),
+            baselineHash: String(ev.data.baselineHash ?? ""),
+            afterHash: String(ev.data.afterHash ?? ""),
+            sessionId: String(ev.sessionId ?? key),
+          });
+          void reloadEditedFile(String(ev.data.path));
+        }
+        break;
       case "tool.error":
         appState.upsertTool(key, {
           id: String(ev.data?.toolCallId),
@@ -223,6 +236,74 @@
         approved,
       }),
     });
+  }
+
+  async function reloadEditedFile(path: string) {
+    const res = await fetch("/api/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "open", path }),
+    });
+    if (!res.ok) return;
+    const file = await res.json();
+    const existing = appState.tabs.find((t) => t.path === file.path);
+    if (existing) {
+      existing.content = file.content;
+      existing.hash = file.hash;
+      existing.dirty = false;
+      existing.savedContent = file.content;
+      appState.tabs = [...appState.tabs];
+    } else {
+      appState.tabs = [...appState.tabs, { ...file, dirty: false, savedContent: file.content }];
+    }
+    if (!appState.activePath) appState.activePath = file.path;
+  }
+
+  async function reviewAll(action: "acceptAll" | "rejectAll") {
+    const before = [...appState.pendingChanges];
+    const res = await fetch("/api/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      appState.showToast(data.error ?? "Review failed", "error");
+      return;
+    }
+    if (Array.isArray(data.pending)) appState.setPendingChanges(data.pending);
+
+    if (action === "rejectAll") {
+      for (const change of before) {
+        if (change.kind === "create") {
+          appState.tabs = appState.tabs.filter((t) => t.path !== change.path);
+        } else {
+          const t = appState.tabs.find((x) => x.path === change.path);
+          if (t) {
+            t.content = change.baseline;
+            t.hash = change.baselineHash || t.hash;
+            t.dirty = false;
+            t.savedContent = change.baseline;
+          }
+        }
+      }
+      if (appState.activePath && !appState.tabs.some((t) => t.path === appState.activePath)) {
+        appState.activePath = appState.tabs.at(-1)?.path ?? null;
+      }
+      appState.tabs = [...appState.tabs];
+    } else {
+      for (const change of before) {
+        const t = appState.tabs.find((x) => x.path === change.path);
+        if (t) {
+          t.dirty = false;
+          t.savedContent = t.content;
+        }
+      }
+      appState.tabs = [...appState.tabs];
+    }
+    appState.showToast(action === "acceptAll" ? "Accepted all" : "Rejected all", "success");
+    if (action === "acceptAll") appState.bumpHistory();
+    void refreshTree();
   }
 
   async function send() {
@@ -399,6 +480,18 @@
       <div class="flex gap-1 shrink-0">
         <button type="button" class="btn btn-xs btn-danger" onclick={() => approve(false)}>Deny</button>
         <button type="button" class="btn btn-xs btn-primary" onclick={() => approve(true)}>Allow</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if appState.pendingChanges.length > 0}
+    <div class="mx-2 mb-2 alert alert-info text-xs shrink-0 flex items-center gap-2">
+      <div class="flex-1 min-w-0">
+        {appState.pendingChanges.length} pending file change{appState.pendingChanges.length === 1 ? "" : "s"}
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button type="button" class="btn btn-xs btn-danger" onclick={() => reviewAll("rejectAll")}>Reject all</button>
+        <button type="button" class="btn btn-xs btn-primary" onclick={() => reviewAll("acceptAll")}>Accept all</button>
       </div>
     </div>
   {/if}
