@@ -13,6 +13,7 @@ export type {
   ToolCallCard,
 } from "./types.js";
 export { THEME_IDS, DEFAULT_THEME } from "./types.js";
+export { isImagePath, imageMimeType, extnameLower } from "./media.js";
 export { PendingChangeStore } from "./services/pending-changes.js";
 
 export { ThemeModel } from "./models/theme-model.js";

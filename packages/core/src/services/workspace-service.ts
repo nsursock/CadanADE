@@ -68,7 +68,7 @@ export class WorkspaceService {
     return resolved;
   }
 
-  private hash(content: string) {
+  private hash(content: string | Uint8Array) {
     return createHash("sha256").update(content).digest("hex").slice(0, 16);
   }
 
@@ -139,6 +139,12 @@ export class WorkspaceService {
     const abs = this.assertInside(root, rel);
     const content = await fs.readFile(abs, "utf8");
     return { path: rel, content, hash: this.hash(content) };
+  }
+
+  async readBinaryFile(root: string, rel: string) {
+    const abs = this.assertInside(root, rel);
+    const data = await fs.readFile(abs);
+    return { path: rel, data, hash: this.hash(data) };
   }
 
   async writeFile(root: string, rel: string, content: string, expectedHash?: string) {

@@ -14,7 +14,7 @@ export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json();
   const action = body.action as string;
   const root = workspaceModel.root;
-  if (!root && action !== "close" && action !== "activate" && action !== "listPending") {
+  if (!root && action !== "close" && action !== "closeAll" && action !== "activate" && action !== "listPending") {
     return json({ error: "No workspace open" }, { status: 400 });
   }
 
@@ -40,6 +40,10 @@ export const POST: RequestHandler = async ({ request }) => {
     }
     if (action === "close") {
       editorController.close(String(body.path));
+      return json({ tabs: editorModel.tabs, activePath: editorModel.activePath });
+    }
+    if (action === "closeAll") {
+      for (const tab of [...editorModel.tabs]) editorController.close(tab.path);
       return json({ tabs: editorModel.tabs, activePath: editorModel.activePath });
     }
     if (action === "activate") {

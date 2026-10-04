@@ -3,6 +3,7 @@ import type { PendingChangeStore } from "../services/pending-changes.js";
 import type { EditorModel } from "../models/editor-model.js";
 import type { WorkspaceService } from "../services/workspace-service.js";
 import type { PendingChange } from "../types.js";
+import { isImagePath } from "../media.js";
 
 export class EditorController {
   constructor(
@@ -13,6 +14,12 @@ export class EditorController {
   ) {}
 
   async openFile(root: string, rel: string) {
+    if (isImagePath(rel)) {
+      const bin = await this.service.readBinaryFile(root, rel);
+      const file = { path: bin.path, content: "", hash: bin.hash };
+      this.model.open({ ...file, dirty: false, savedContent: "" });
+      return file;
+    }
     const file = await this.service.readFile(root, rel);
     this.model.open({ ...file, dirty: false, savedContent: file.content });
     return file;

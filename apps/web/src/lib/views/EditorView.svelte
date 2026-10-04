@@ -5,9 +5,13 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
   import { showMinimap } from "@replit/codemirror-minimap";
+  import IconDeviceFloppy from "@tabler/icons-svelte/icons/device-floppy";
+  import IconClearAll from "@tabler/icons-svelte/icons/clear-all";
+  import { isImagePath } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
   import { languageSupportForPath, scifiSyntaxHighlighting } from "$lib/editor/highlight";
   import { minimapGutterColors, pendingDiffExtension } from "$lib/editor/pending-diff";
+  import Tooltip from "./Tooltip.svelte";
 
   let host: HTMLDivElement;
   let view: EditorView | null = null;
@@ -19,8 +23,20 @@
   const langCompartment = new Compartment();
   const pendingCompartment = new Compartment();
 
+  /** Cmd on Apple hardware, Ctrl elsewhere — mirrors CodeMirror's `Mod-` prefix. */
+  const MOD_LABEL = typeof navigator !== "undefined" && /mac|iphone|ipad|ipod/i.test(navigator.platform)
+    ? "⌘"
+    : "Ctrl";
+
   /** Mutable ref so CM extensions can read current baseline without reconfigure storms. */
   let baselineRef: string | null = null;
+
+  const showingImage = $derived(!!appState.activePath && isImagePath(appState.activePath));
+  const imageSrc = $derived(
+    showingImage && appState.activeTab
+      ? `/api/files/raw?path=${encodeURIComponent(appState.activeTab.path)}&h=${appState.activeTab.hash}`
+      : null,
+  );
 
   function getBaseline() {
     return baselineRef;
@@ -33,6 +49,7 @@
 
   function setEditorDoc(path: string, content: string) {
     if (!view) return;
+    if (isImagePath(path)) return;
     if (appState.activePath && path !== appState.activePath) return;
     const cur = view.state.doc.toString();
     if (cur === content) {
@@ -64,7 +81,7 @@
       return;
     }
 
-    if (!tab) {
+    if (!tab || isImagePath(tab.path)) {
       baselineRef = null;
       lastBaseline = null;
       lastDocNonce = nonce;
@@ -80,7 +97,7 @@
       } finally {
         applyingExternal = false;
       }
-      lastPath = null;
+      lastPath = tab?.path ?? null;
       return;
     }
 
@@ -125,7 +142,9 @@
     view = new EditorView({
       parent: host,
       state: EditorState.create({
-        doc: appState.activeTab?.content ?? "",
+        doc: appState.activeTab && !isImagePath(appState.activeTab.path)
+          ? (appState.activeTab.content ?? "")
+          : "",
         extensions: [
           lineNumbers(),
           foldGutter(),
@@ -134,8 +153,14 @@
           indentOnInput(),
           bracketMatching(),
           history(),
-          keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-          langCompartment.of(languageSupportForPath(initialPath)),
+          keymap.of([
+            // Mod- is Cmd on Apple, Ctrl on Linux/Windows. First so it wins over the browser default.
+            { key: "Mod-s", run: () => { if (appState.activeTab?.dirty) void save(); return true; }, preventDefault: true },
+            indentWithTab,
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
+          langCompartment.of(languageSupportForPath(initialPath && !isImagePath(initialPath) ? initialPath : null)),
           pendingCompartment.of(pendingDiffExtension(getBaseline)),
           // Stable minimap extension — gutters recompute via facet, not compartment churn.
           showMinimap.compute(["doc"], (state) => ({
@@ -148,6 +173,7 @@
           EditorView.updateListener.of((u) => {
             if (applyingExternal) return;
             if (!u.docChanged || !appState.activePath) return;
+            if (isImagePath(appState.activePath)) return;
             const content = u.state.doc.toString();
             const tab = appState.tabs.find((t) => t.path === appState.activePath);
             if (tab && tab.content !== content) {
@@ -245,7 +271,7 @@
 
   $effect(() => {
     const line = appState.scrollToLine;
-    if (line == null || !view) return;
+    if (line == null || !view || showingImage) return;
     const doc = view.state.doc;
     const safe = Math.max(1, Math.min(line, doc.lines));
     const pos = doc.line(safe).from;
@@ -283,9 +309,40 @@
     appState.activePath = data.activePath ?? appState.tabs.at(-1)?.path ?? null;
   }
 
+  async function closeAll() {
+    if (appState.tabs.length === 0) return;
+    const discarded = appState.tabs.filter((t) => t.dirty).length;
+    await fetch("/api/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "closeAll" }),
+    });
+    appState.tabs = [];
+    appState.activePath = null;
+    if (discarded > 0) {
+      appState.showToast(`Discarded unsaved changes in ${discarded} file(s)`, "warning");
+    }
+  }
+
+  /**
+   * Cmd/Ctrl+S outside the editor (tree, chat, terminal). Accepts either modifier
+   * so Mac Ctrl+S and Windows/Linux Cmd+S both work.
+   */
+  function onWindowKeydown(e: KeyboardEvent) {
+    // The CodeMirror Mod-s binding already handled it (and prevented the default).
+    if (e.defaultPrevented) return;
+    if (e.altKey || !(e.metaKey || e.ctrlKey)) return;
+    if (e.key.toLowerCase() !== "s") return;
+    const tab = appState.activeTab;
+    if (!tab || isImagePath(tab.path)) return;
+    // Never hand the combo to the browser's own "save page" dialog.
+    e.preventDefault();
+    if (tab.dirty) void save();
+  }
+
   async function save() {
     const tab = appState.activeTab;
-    if (!tab) return;
+    if (!tab || isImagePath(tab.path)) return;
     const res = await fetch("/api/files", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -372,7 +429,7 @@
       </button>
     {/each}
     <div class="flex-1"></div>
-    {#if appState.activePending}
+    {#if appState.activePending && !showingImage}
       <button type="button" class="btn btn-xs btn-ghost m-1 text-[var(--scifi-success)]" onclick={() => applyReview("accept")}>
         Accept
       </button>
@@ -380,17 +437,51 @@
         Reject
       </button>
     {/if}
-    <button type="button" class="btn btn-xs btn-ghost m-1" disabled={!appState.activeTab?.dirty} onclick={save}>
-      Save
-    </button>
+    {#if !showingImage}
+      <Tooltip tip={`Save (${MOD_LABEL}+S)`} prefer="bottom">
+        <button
+          type="button"
+          class="icon-btn btn-xs m-1"
+          disabled={!appState.activeTab?.dirty}
+          aria-label="Save active file"
+          onclick={save}
+        >
+          <IconDeviceFloppy size={14} stroke={1.75} />
+        </button>
+      </Tooltip>
+    {/if}
+    <Tooltip tip="Close all tabs" prefer="bottom">
+      <button
+        type="button"
+        class="icon-btn btn-xs m-1"
+        disabled={appState.tabs.length === 0}
+        aria-label="Close all tabs"
+        onclick={closeAll}
+      >
+        <IconClearAll size={14} stroke={1.75} />
+      </button>
+    </Tooltip>
   </div>
-  <div class="flex-1 min-h-0 overflow-hidden" bind:this={host}></div>
+  <div class="flex-1 min-h-0 overflow-hidden relative">
+    <div class="h-full min-h-0 overflow-hidden" class:hidden={showingImage} bind:this={host}></div>
+    {#if showingImage && imageSrc}
+      <div class="absolute inset-0 flex items-center justify-center overflow-auto p-4 bg-[rgba(var(--scifi-surface-0-rgb,10,8,20),0.35)]">
+        <img
+          src={imageSrc}
+          alt={appState.activeTab?.path?.split("/").pop() ?? "image"}
+          class="max-w-full max-h-full object-contain shadow-[0_0_0_1px_var(--scifi-border)]"
+        />
+      </div>
+    {/if}
+  </div>
   {#if !appState.activeTab}
     <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-scifi-muted text-sm">
       Open a file from the tree
     </div>
   {/if}
 </div>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <style>
   :global(.tab.pending) {
