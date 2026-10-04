@@ -1,13 +1,16 @@
 export const THEME_IDS = [
   "retrowave",
   "ghibli",
-  "fiesta",
+  "vibrantFiesta",
   "dawn",
   "synthwave84",
   "solarizedDark",
   "cottonCandy",
   "goldenTwilight",
   "brightContrasts",
+  "cantinaGirl",
+  "cyberpunk",
+  "steampunk",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];

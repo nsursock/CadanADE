@@ -12,13 +12,16 @@
   > = {
     retrowave: { label: "Retrowave", primary: "#ff2e9a", secondary: "#b46bff", cyan: "#2ee6ff" },
     ghibli: { label: "Ghibli", primary: "#4a8b6f", secondary: "#6ba3d6", cyan: "#d6a13a" },
-    fiesta: { label: "Fiesta", primary: "#ff006e", secondary: "#fb5607", cyan: "#3a86ff" },
+    vibrantFiesta: { label: "Vibrant Fiesta", primary: "#ff006e", secondary: "#fb5607", cyan: "#3a86ff" },
     dawn: { label: "Dawn", primary: "#ff7e6b", secondary: "#6b8fd6", cyan: "#d4a017" },
     synthwave84: { label: "Synthwave '84", primary: "#ff7edb", secondary: "#36f9f6", cyan: "#fede5d" },
     solarizedDark: { label: "Solarized Dark", primary: "#268bd2", secondary: "#2aa198", cyan: "#b58900" },
     cottonCandy: { label: "Cotton Candy", primary: "#ff9fb2", secondary: "#0acdff", cyan: "#60ab9a" },
     goldenTwilight: { label: "Golden Twilight", primary: "#ffd60a", secondary: "#003566", cyan: "#ffc300" },
     brightContrasts: { label: "Bright Contrasts", primary: "#ef476f", secondary: "#1b9aaa", cyan: "#06d6a0" },
+    cantinaGirl: { label: "Cantina Girl", primary: "#c8b6ff", secondary: "#98d98e", cyan: "#f4c542" },
+    cyberpunk: { label: "Cyberpunk", primary: "#00e5ff", secondary: "#ff00a0", cyan: "#a3ff12" },
+    steampunk: { label: "Steampunk", primary: "#c9973f", secondary: "#4e8c7a", cyan: "#b8503a" },
   };
 
   function setTheme(id: ThemeId) {

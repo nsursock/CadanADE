@@ -10,6 +10,9 @@
   import IconCandy from "@tabler/icons-svelte/icons/candy";
   import IconSunset from "@tabler/icons-svelte/icons/sunset";
   import IconContrast from "@tabler/icons-svelte/icons/contrast";
+  import IconGlassCocktail from "@tabler/icons-svelte/icons/glass-cocktail";
+  import IconCpu from "@tabler/icons-svelte/icons/cpu";
+  import IconSettingsAutomation from "@tabler/icons-svelte/icons/settings-automation";
   import { THEME_IDS, type ThemeId, patchSettings } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
   import Tooltip from "./Tooltip.svelte";
@@ -20,13 +23,16 @@
   > = {
     retrowave: { label: "Retrowave", icon: IconWaveSine },
     ghibli: { label: "Ghibli", icon: IconLeaf },
-    fiesta: { label: "Fiesta", icon: IconConfetti },
+    vibrantFiesta: { label: "Vibrant Fiesta", icon: IconConfetti },
     dawn: { label: "Dawn", icon: IconSunrise },
     synthwave84: { label: "Synthwave '84", icon: IconVinyl },
     solarizedDark: { label: "Solarized Dark", icon: IconSunHigh },
     cottonCandy: { label: "Cotton Candy", icon: IconCandy },
     goldenTwilight: { label: "Golden Twilight", icon: IconSunset },
     brightContrasts: { label: "Bright Contrasts", icon: IconContrast },
+    cantinaGirl: { label: "Cantina Girl", icon: IconGlassCocktail },
+    cyberpunk: { label: "Cyberpunk", icon: IconCpu },
+    steampunk: { label: "Steampunk", icon: IconSettingsAutomation },
   };
 
   let open = $state(false);

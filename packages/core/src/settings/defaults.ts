@@ -1,4 +1,5 @@
 import type { ChatDisplayMode, ThemeId } from "../types.js";
+import { THEME_IDS } from "../types.js";
 
 /** Frontier-only vs cost-routed agent (bulk reads gated / outlined). */
 export type AgentMode = "normal" | "thrift";
@@ -39,6 +40,12 @@ export const DEFAULT_SETTINGS: CadanSettings = {
 
 const LEGACY_DEFAULT_MODEL = "google/gemma-3-27b-it:free";
 
+/** Theme ids renamed after v1 — mapped forward so saved settings keep working. */
+const LEGACY_THEME_IDS: Record<string, ThemeId> = {
+  fiesta: "vibrantFiesta",
+  cantina: "cantinaGirl",
+};
+
 export function clampMaxTokens(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
   if (!Number.isFinite(v)) return DEFAULT_SETTINGS.maxTokens;
@@ -55,6 +62,11 @@ export function mergeSettings(partial: Partial<CadanSettings> | null | undefined
   }
   if (merged.chatDisplayMode !== "verbose" && merged.chatDisplayMode !== "compact") {
     merged.chatDisplayMode = DEFAULT_SETTINGS.chatDisplayMode;
+  }
+  const migratedTheme = LEGACY_THEME_IDS[merged.themeId as string];
+  if (migratedTheme) merged.themeId = migratedTheme;
+  if (!(THEME_IDS as readonly string[]).includes(merged.themeId)) {
+    merged.themeId = DEFAULT_SETTINGS.themeId;
   }
   merged.maxTokens = clampMaxTokens(merged.maxTokens);
   return merged;
