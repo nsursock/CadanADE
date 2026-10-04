@@ -214,6 +214,11 @@
         if (ev.data) appState.applyUsage(key, ev.data);
         break;
       case "done":
+        if (ev.data) {
+          appState.applyUsage(key, ev.data);
+          appState.setChatTurnNote(key, typeof ev.data.message === "string" ? ev.data.message : null);
+        }
+        break;
       case "cancelled":
         if (ev.data) appState.applyUsage(key, ev.data);
         break;
@@ -528,6 +533,9 @@
         {:else if chat.turnUsage.promptTokens >= 20000}
           <span class="text-scifi-primary/90">context growing</span>
         {/if}
+      {/if}
+      {#if chat.turnNote}
+        <span class="text-warning">Stopped · {chat.turnNote}</span>
       {/if}
       {#if chat.openRouterSessionId}
         <span class="font-mono truncate max-w-full opacity-70">{chat.openRouterSessionId}</span>

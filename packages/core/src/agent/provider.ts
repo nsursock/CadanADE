@@ -46,6 +46,8 @@ export interface ProviderChatOptions {
   signal?: AbortSignal;
   /** OpenRouter session_id — groups requests for Activity / Analytics A/B. */
   sessionId?: string;
+  /** Called before each retry of a transient upstream failure (429 / 5xx / network). */
+  onRetry?: (info: { attempt: number; delayMs: number; status?: number; reason: string }) => void;
 }
 
 export type ProviderEvent =
@@ -59,6 +61,11 @@ export type ProviderEvent =
 
 export interface LLMProvider {
   chat(messages: ProviderMessage[], options: ProviderChatOptions): AsyncIterable<ProviderEvent>;
+}
+
+/** OpenRouter routing ids — the backend is chosen per request, not fixed. */
+export function isRouterModel(id: string | undefined): boolean {
+  return typeof id === "string" && /^openrouter\/(free|auto|router)/i.test(id);
 }
 
 /** Stable OpenRouter session_id for Normal vs Thrift A/B (max 256 chars). */

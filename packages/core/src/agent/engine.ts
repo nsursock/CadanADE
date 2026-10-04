@@ -6,8 +6,18 @@ import {
   parseExecutedCommand,
 } from "./check-commands.js";
 import { compactToolMessages } from "./context-compact.js";
+import {
+  looksUnfinished,
+  MAX_REASONING_NUDGES,
+  MAX_REPEAT_NUDGES,
+  MAX_UNFINISHED_NUDGES,
+  REASONING_LOOP_NUDGE,
+  REPEAT_TOOL_NUDGE,
+  UNFINISHED_TURN_NUDGE,
+} from "./continuation.js";
+import { appendReasoningText } from "./reasoning-text.js";
 import type { LLMProvider, ProviderMessage, ProviderToolCall, ProviderUsage } from "./provider.js";
-import { openRouterSessionId } from "./provider.js";
+import { isRouterModel, openRouterSessionId } from "./provider.js";
 import { AgentSession } from "./session.js";
 import { APPROVAL_REQUIRED, TOOL_SCHEMAS } from "./tools/schema.js";
 import { createToolHandlers } from "./tools/handlers.js";
@@ -18,7 +28,8 @@ import type { AgentMode } from "../settings/defaults.js";
 const EDIT_BIAS = `Prefer edit_file for fixes; use write_file/create_file for new files or intentional full rewrites only — do not rewrite an entire file to fix one error.
 When a command or test prints an error or shape mismatch, fix that specific issue next; do not ignore tool output.
 Do not invent library APIs — inspect installed packages or use the simplest documented form.
-If output was truncated (finish_reason=length), make a smaller change or ask to raise max tokens / start a fresh chat.`;
+If output was truncated (finish_reason=length), make a smaller change or ask to raise max tokens / start a fresh chat.
+Don't overthink: keep reasoning short; take the simplest next tool action instead of long speculation or redesign monologues.`;
 
 const SYSTEM_NORMAL = `You are Cadan, an autonomous coding agent in a local workspace IDE.
 If the workspace has an AGENTS.md file, read it at the start of a new conversation for workspace-specific guidance.
@@ -30,7 +41,7 @@ Match the file type of existing files in the workspace; do not default to markdo
 After writing runnable code, execute it to verify before claiming success.
 If the workspace has a virtual environment (e.g. .venv/bin/python), use it for all Python commands — never bare \`python\`.
 When the user mentions a file by name, search for it directly — do not list the workspace first. Prefer search_files over list_files for orientation; list_files returns every file including logs and build artifacts and can be very large. Use list_files only before creating a new file to match neighboring conventions.
-Act on reasonable assumptions; do not ask clarifying questions unless blocked.
+Act on reasonable assumptions; do not ask clarifying questions unless blocked. Don't overthink — ship the next edit or command.
 When done, briefly summarize what you changed.`;
 
 const SYSTEM_THRIFT = `You are Cadan, an autonomous coding agent in a local workspace IDE (thrift mode).
@@ -45,7 +56,7 @@ If the workspace has a virtual environment (e.g. .venv/bin/python), use it for a
 When the user mentions a file by name, search for it directly — do not list the workspace first. Prefer search_files over list_files for orientation; list_files returns every file including logs and build artifacts and can be very large. Use list_files only before creating a new file to match neighboring conventions.
 Bulk file reads over the line threshold return an outline only — follow up with startLine/endLine or search_files for the slices you need. Do not ask for the full file body when an outline suffices.
 Files you create or write in this turn are never blocked on re-read — you can read them back in full to validate.
-Act on reasonable assumptions; do not ask clarifying questions unless blocked.
+Act on reasonable assumptions; do not ask clarifying questions unless blocked. Don't overthink — ship the next edit or command.
 When done, briefly summarize what you changed.`;
 
 const LENGTH_NUDGE =
@@ -54,8 +65,22 @@ const LENGTH_NUDGE =
 const CHECK_UNTIL_GREEN_NUDGE = (checks: string[], detail: string) =>
   `Verification not green yet (${detail}). Run these check command(s) with execute_command, fix failures with edit_file, and do not stop until every check exits 0:\n${checks.map((c) => `- ${c}`).join("\n")}`;
 
+const AUTO_CONTINUE_NUDGE =
+  "You reached this turn's step budget while still working. Continue with the next tool call right away — do not summarize, do not ask what to do next, and do not redo work you already finished.";
+
 const DEFAULT_MODEL = process.env.CADAN_MODEL ?? "openrouter/free";
 const MAX_CHECK_RETRIES = 5;
+
+/** Model calls per budget segment. Reaching it grants an auto-continue, not a stop. */
+export const DEFAULT_MAX_ITERATIONS = 50;
+/** Extra segments granted while the model keeps making tool-call progress. */
+const MAX_AUTO_CONTINUES = 3;
+
+export function clampMaxIterations(n: unknown): number {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return DEFAULT_MAX_ITERATIONS;
+  return Math.min(400, Math.max(4, Math.round(v)));
+}
 
 /**
  * Detect degenerate reasoning loops — the same text block repeated 3+ times.
@@ -82,6 +107,7 @@ export interface EngineOptions {
   /** Cheap model for thrift bulk outlines; omit for deterministic-only outlines. */
   worker?: { provider: LLMProvider; model: string };
   readLineThreshold?: number;
+  /** Model calls per budget segment before an auto-continue nudge (default 50). */
   maxIterations?: number;
   /** Completion budget passed to the provider (default 4096). */
   maxTokens?: number;
@@ -112,9 +138,11 @@ export class AgentEngine {
 
   async run(session: AgentSession, userText: string) {
     const { provider, workspace, root, emit } = this.opts;
-    const model = this.opts.model ?? process.env.CADAN_MODEL ?? DEFAULT_MODEL;
+    let model = this.opts.model ?? process.env.CADAN_MODEL ?? DEFAULT_MODEL;
+    const pinRouted = process.env.CADAN_PIN_ROUTED_MODEL === "1";
+    let pinned = false;
     const agentMode: AgentMode = this.opts.agentMode ?? "normal";
-    const maxIterations = this.opts.maxIterations ?? 10;
+    const maxIterations = clampMaxIterations(this.opts.maxIterations);
     const maxTokens = this.opts.maxTokens ?? 4096;
     const keepRecentToolResults = this.opts.keepRecentToolResults ?? 6;
     const signal = session.beginTurn();
@@ -127,6 +155,9 @@ export class AgentEngine {
     const writtenThisTurn = new Set<string>();
     let lastToolSignature = "";
     let toolRepeatCount = 0;
+    let repeatNudges = 0;
+    let unfinishedNudges = 0;
+    let reasoningNudges = 0;
     let lastFinishReason: string | undefined;
     let lastRoutedModel: string | undefined;
     const writePathCounts = new Map<string, number>();
@@ -134,9 +165,9 @@ export class AgentEngine {
     /** Latest exit code per check command (undefined = never run). */
     const checkResults = new Map<string, number | null>();
     let checkRetries = 0;
-    const maxIters = checkCommands.length
-      ? Math.max(maxIterations, maxIterations + MAX_CHECK_RETRIES)
-      : maxIterations;
+    const stepBudget = checkCommands.length ? maxIterations + MAX_CHECK_RETRIES : maxIterations;
+    const maxIters = stepBudget * (MAX_AUTO_CONTINUES + 1);
+    let autoContinues = 0;
 
     const track = (u: ProviderUsage) => {
       addUsage(turnUsage, u);
@@ -232,6 +263,21 @@ export class AgentEngine {
           emit(agentEvent("cancelled", session.id, usagePayload()));
           return;
         }
+        // Budget segment spent while the model was still calling tools — extend
+        // instead of ending the turn, so long tasks don't need a manual "continue".
+        if (i > 0 && i % stepBudget === 0 && autoContinues < MAX_AUTO_CONTINUES) {
+          autoContinues++;
+          emit(
+            agentEvent("status", session.id, {
+              message: `Step budget reached · auto-continuing (${autoContinues}/${MAX_AUTO_CONTINUES})`,
+              iteration: i + 1,
+              model,
+              routedModel: lastRoutedModel,
+              agentMode,
+            }),
+          );
+          session.messages.push({ role: "system", content: AUTO_CONTINUE_NUDGE });
+        }
         emit(
           agentEvent("status", session.id, {
             message: `Thinking…`,
@@ -249,6 +295,7 @@ export class AgentEngine {
         const reasoningDetails: unknown[] = [];
         const argBuf: Record<number, { id: string; name: string; args: string }> = {};
         let iterFinishReason = "stop";
+        let reasoningLooped = false;
 
         const messagesForModel = compactToolMessages(session.messages, {
           keepRecentTools: keepRecentToolResults,
@@ -260,12 +307,23 @@ export class AgentEngine {
           signal,
           sessionId: orSession,
           maxTokens,
+          onRetry: (info) =>
+            emit(
+              agentEvent("status", session.id, {
+                message: `${info.reason} · retry ${info.attempt} in ${(info.delayMs / 1000).toFixed(1)}s`,
+                iteration: i + 1,
+                model,
+                routedModel: lastRoutedModel,
+                agentMode,
+              }),
+            ),
         })) {
           if (ev.type === "reasoning.delta") {
             if (ev.text) {
-              reasoningText += ev.text;
+              reasoningText = appendReasoningText(reasoningText, ev.text);
               emit(agentEvent("reasoning.delta", session.id, { text: ev.text }));
               if (isReasoningLoop(reasoningText)) {
+                reasoningLooped = true;
                 emit(
                   agentEvent("status", session.id, {
                     message: "Reasoning loop detected — stopping generation",
@@ -314,6 +372,22 @@ export class AgentEngine {
             iterFinishReason = ev.finishReason || "stop";
             lastFinishReason = iterFinishReason;
             if (ev.model && ev.model !== model) lastRoutedModel = ev.model;
+            // Opt-in: hold the routed backend for the rest of the turn so a router
+            // (openrouter/free) can't swap tool-call quality mid-task.
+            if (pinRouted && !pinned && isRouterModel(model) && ev.model && !isRouterModel(ev.model)) {
+              pinned = true;
+              lastRoutedModel = ev.model;
+              model = ev.model;
+              emit(
+                agentEvent("status", session.id, {
+                  message: `Pinned · ${ev.model}`,
+                  iteration: i + 1,
+                  model,
+                  routedModel: ev.model,
+                  agentMode,
+                }),
+              );
+            }
             if (ev.usage) {
               track(ev.usage);
               if (ev.usage.routedModel && ev.usage.routedModel !== model) {
@@ -369,8 +443,10 @@ export class AgentEngine {
           content: assistantText || null,
           tool_calls: toolCalls.length ? toolCalls : undefined,
         };
-        if (reasoningText) assistantMsg.reasoning = reasoningText;
-        if (reasoningDetails.length) assistantMsg.reasoning_details = reasoningDetails;
+        if (reasoningText && !reasoningLooped) assistantMsg.reasoning = reasoningText;
+        if (reasoningDetails.length && !reasoningLooped) {
+          assistantMsg.reasoning_details = reasoningDetails;
+        }
         session.messages.push(assistantMsg);
 
         if (iterFinishReason === "length") {
@@ -385,14 +461,6 @@ export class AgentEngine {
             }),
           );
           session.messages.push({ role: "system", content: LENGTH_NUDGE });
-          if (!toolCalls.length) {
-            // Still allow check-until-green to continue after truncation nudge.
-            if (!(checkCommands.length && !checksGreen() && checkRetries < MAX_CHECK_RETRIES)) {
-              session.status = "done";
-              emit(agentEvent("done", session.id, { message: "Truncated (length)", ...usagePayload() }));
-              return;
-            }
-          }
         }
 
         if (!toolCalls.length) {
@@ -415,6 +483,43 @@ export class AgentEngine {
             });
             continue;
           }
+
+          // The model answered instead of acting. Reasoning loops and truncated
+          // replies land here too — nudge a bounded number of times before
+          // letting the turn end.
+          if (reasoningLooped && reasoningNudges < MAX_REASONING_NUDGES) {
+            reasoningNudges++;
+            emit(
+              agentEvent("status", session.id, {
+                message: `Reasoning loop · nudging (${reasoningNudges}/${MAX_REASONING_NUDGES})`,
+                iteration: i + 1,
+                model,
+                routedModel: lastRoutedModel,
+                agentMode,
+              }),
+            );
+            session.messages.push({ role: "system", content: REASONING_LOOP_NUDGE });
+            continue;
+          }
+          if (
+            !reasoningLooped &&
+            unfinishedNudges < MAX_UNFINISHED_NUDGES &&
+            looksUnfinished(assistantText, { iterations: i })
+          ) {
+            unfinishedNudges++;
+            emit(
+              agentEvent("status", session.id, {
+                message: `No tool call · nudging (${unfinishedNudges}/${MAX_UNFINISHED_NUDGES})`,
+                iteration: i + 1,
+                model,
+                routedModel: lastRoutedModel,
+                agentMode,
+              }),
+            );
+            session.messages.push({ role: "system", content: UNFINISHED_TURN_NUDGE });
+            continue;
+          }
+
           if (checkCommands.length && !checksGreen()) {
             session.status = "done";
             emit(
@@ -425,8 +530,22 @@ export class AgentEngine {
             );
             return;
           }
+          // Why the turn is ending without a tool call — reported so the UI can explain
+          // itself instead of the user guessing.
+          const stallReason = reasoningLooped
+            ? `Reasoning loop did not recover after ${MAX_REASONING_NUDGES} warning(s)`
+            : looksUnfinished(assistantText, { iterations: i })
+              ? `Model kept replying without a tool call after ${MAX_UNFINISHED_NUDGES} nudge(s)`
+              : iterFinishReason === "length"
+                ? "Truncated (length)"
+                : undefined;
           session.status = "done";
-          emit(agentEvent("done", session.id, usagePayload()));
+          emit(
+            agentEvent("done", session.id, {
+              ...(stallReason ? { message: stallReason } : {}),
+              ...usagePayload(),
+            }),
+          );
           return;
         }
 
@@ -438,20 +557,40 @@ export class AgentEngine {
         if (signature === lastToolSignature) {
           toolRepeatCount++;
           if (toolRepeatCount >= 2) {
-            emit(
-              agentEvent("status", session.id, {
-                message: "Repetitive tool calls detected — stopping",
-                iteration: i + 1,
-                model,
-                agentMode,
-              }),
-            );
-            session.status = "done";
-            emit(agentEvent("done", session.id, { message: "Repetitive tool calls", ...usagePayload() }));
-            return;
+            if (repeatNudges < MAX_REPEAT_NUDGES) {
+              repeatNudges++;
+              emit(
+                agentEvent("status", session.id, {
+                  message: `Repeated tool call · nudging (${repeatNudges}/${MAX_REPEAT_NUDGES})`,
+                  iteration: i + 1,
+                  model,
+                  agentMode,
+                }),
+              );
+              session.messages.push({ role: "system", content: REPEAT_TOOL_NUDGE });
+              toolRepeatCount = 0;
+            } else {
+              emit(
+                agentEvent("status", session.id, {
+                  message: "Repetitive tool calls detected — stopping",
+                  iteration: i + 1,
+                  model,
+                  agentMode,
+                }),
+              );
+              session.status = "done";
+              emit(
+                agentEvent("done", session.id, {
+                  message: `Repetitive tool calls — the model repeated the same call after ${MAX_REPEAT_NUDGES} warning(s)`,
+                  ...usagePayload(),
+                }),
+              );
+              return;
+            }
           }
         } else {
           toolRepeatCount = 0;
+          repeatNudges = 0;
         }
         lastToolSignature = signature;
 
@@ -558,7 +697,14 @@ export class AgentEngine {
       }
 
       session.status = "done";
-      emit(agentEvent("done", session.id, { message: "Iteration limit reached", ...usagePayload() }));
+      emit(
+        agentEvent("done", session.id, {
+          message: `Step budget exhausted after ${maxIters} model calls (${autoContinues} auto-continue${
+            autoContinues === 1 ? "" : "s"
+          }) — send another message to keep going`,
+          ...usagePayload(),
+        }),
+      );
     } catch (e) {
       if (signal.aborted) {
         session.status = "cancelled";

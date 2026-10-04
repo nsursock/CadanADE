@@ -45,7 +45,7 @@
         <div class="chat-body space-y-2">
           {#each parts as part (part.id)}
             {#if part.kind === "reasoning"}
-              <div class="rounded border border-[var(--scifi-border)]/70 bg-black/10 px-2 py-1.5 text-[0.7rem] text-scifi-muted whitespace-pre-wrap break-words">
+              <div class="rounded border border-[var(--scifi-border)]/70 bg-black/10 px-2 py-1.5 text-[0.7rem] text-scifi-muted break-words leading-relaxed">
                 <div class="mb-1 text-[0.6rem] uppercase tracking-wide opacity-70">Reasoning</div>
                 {part.text}
               </div>

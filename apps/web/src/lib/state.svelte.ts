@@ -8,6 +8,7 @@ import type {
   TreeNode,
   ToolCallCard,
 } from "@cadan/core";
+import { appendReasoningText } from "@cadan/core";
 
 export type SessionUsage = {
   promptTokens: number;
@@ -43,6 +44,8 @@ export type ChatSessionTab = {
   pendingApproval: { toolCallId: string; toolName: string; args: unknown } | null;
   openRouterSessionId: string | null;
   turnUsage: TurnUsage | null;
+  /** Why the last turn stopped (iteration budget, truncation, repeat guard, …). */
+  turnNote: string | null;
   sessionUsage: SessionUsage;
 };
 
@@ -68,6 +71,7 @@ function makeChatTab(sessionId: string, index: number): ChatSessionTab {
     pendingApproval: null,
     openRouterSessionId: null,
     turnUsage: null,
+    turnNote: null,
     sessionUsage: emptyUsage(),
   };
 }
@@ -308,6 +312,16 @@ class AppState {
     if (!chat) return;
     chat.streaming = streaming;
     chat.status = status;
+    if (streaming) chat.turnNote = null;
+    this.bumpChats();
+  }
+
+  /** Persist the agent's stop reason so the UI can explain why the turn ended. */
+  setChatTurnNote(sessionKey: string, note: string | null) {
+    const chat = this.chatById(sessionKey);
+    if (!chat) return;
+    const cleaned = note?.trim();
+    chat.turnNote = cleaned ? cleaned : null;
     this.bumpChats();
   }
 
@@ -374,6 +388,7 @@ class AppState {
     if (!chat) return;
     chat.turnUsage = null;
     chat.openRouterSessionId = null;
+    chat.turnNote = null;
     chat.sessionUsage = emptyUsage();
     this.bumpChats();
   }
@@ -399,8 +414,8 @@ class AppState {
     if (!msg) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "reasoning") last.text += text;
-    else msg.parts.push({ kind: "reasoning", id: `r-${Date.now()}-${msg.parts.length}`, text });
+    if (last?.kind === "reasoning") last.text = appendReasoningText(last.text, text);
+    else msg.parts.push({ kind: "reasoning", id: `r-${Date.now()}-${msg.parts.length}`, text: appendReasoningText("", text) });
     this.bumpChats();
   }
 

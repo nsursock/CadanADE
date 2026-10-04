@@ -43,6 +43,8 @@ export {
   OpenRouterProvider,
   encodeSSE,
   openRouterSessionId,
+  DEFAULT_MAX_ITERATIONS,
+  clampMaxIterations,
   TOOL_SCHEMAS,
   APPROVAL_REQUIRED,
 } from "./agent/index.js";

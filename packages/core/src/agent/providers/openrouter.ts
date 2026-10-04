@@ -1,6 +1,10 @@
 import type { LLMProvider, ProviderChatOptions, ProviderEvent, ProviderMessage, ProviderUsage } from "../provider.js";
+import { isRouterModel } from "../provider.js";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const MAX_TRANSIENT_RETRIES = 3;
+const RETRY_BASE_MS = 800;
+const RETRY_CEILING_MS = 30_000;
 
 type UsageChunk = {
   prompt_tokens?: number;
@@ -8,6 +12,34 @@ type UsageChunk = {
   total_tokens?: number;
   cost?: number;
 };
+
+/** Free-tier rate limits and provider 5xx are worth waiting out; 4xx are not. */
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+/** Exponential backoff with jitter, honoring a numeric `Retry-After`. */
+function backoffMs(attempt: number, retryAfter: string | null): number {
+  const hinted = retryAfter ? Number(retryAfter) : NaN;
+  if (Number.isFinite(hinted) && hinted > 0) {
+    return Math.min(Math.round(hinted * 1000), RETRY_CEILING_MS);
+  }
+  const base = RETRY_BASE_MS * 2 ** attempt;
+  return Math.min(Math.round(base + base * 0.25 * Math.random()), RETRY_CEILING_MS);
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
 
 export class OpenRouterProvider implements LLMProvider {
   constructor(
@@ -36,7 +68,7 @@ export class OpenRouterProvider implements LLMProvider {
     };
     if (options.sessionId) body.session_id = options.sessionId;
 
-    const res = await fetch(`${this.base}/chat/completions`, {
+    const init: RequestInit = {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -47,11 +79,50 @@ export class OpenRouterProvider implements LLMProvider {
       },
       body: JSON.stringify(body),
       signal: options.signal,
-    });
+    };
 
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => "");
-      yield { type: "error", message: `OpenRouter ${res.status}: ${text.slice(0, 400)}` };
+    let res: Response | undefined;
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+      if (options.signal?.aborted) return;
+
+      let candidate: Response;
+      try {
+        candidate = await fetch(`${this.base}/chat/completions`, init);
+      } catch (e) {
+        if (options.signal?.aborted) return;
+        const reason = e instanceof Error ? e.message : String(e);
+        if (attempt >= MAX_TRANSIENT_RETRIES) {
+          yield { type: "error", message: `OpenRouter request failed: ${reason}` };
+          return;
+        }
+        const delayMs = backoffMs(attempt, null);
+        options.onRetry?.({ attempt: attempt + 1, delayMs, reason });
+        await sleep(delayMs, options.signal);
+        continue;
+      }
+
+      if (candidate.ok) {
+        res = candidate;
+        break;
+      }
+
+      const text = (await candidate.text().catch(() => "")).slice(0, 400);
+      if (attempt >= MAX_TRANSIENT_RETRIES || !isTransientStatus(candidate.status)) {
+        yield { type: "error", message: `OpenRouter ${candidate.status}: ${text}` };
+        return;
+      }
+      const delayMs = backoffMs(attempt, candidate.headers.get("retry-after"));
+      options.onRetry?.({
+        attempt: attempt + 1,
+        delayMs,
+        status: candidate.status,
+        reason: `HTTP ${candidate.status}`,
+      });
+      await sleep(delayMs, options.signal);
+    }
+
+    if (!res?.body) {
+      yield { type: "error", message: "OpenRouter returned an empty response body" };
       return;
     }
 
@@ -128,12 +199,8 @@ export class OpenRouterProvider implements LLMProvider {
           }
         }
         if (reasoningText || (Array.isArray(reasoningDetails) && reasoningDetails.length)) {
-          // Some models stream reasoning as one-token-per-line via
-          // reasoning_details (each segment carries trailing whitespace/newlines).
-          // The UI renders reasoning with whitespace-pre-wrap, so those newlines
-          // become visible line breaks and adjacent spaces double up. Collapse
-          // all whitespace runs to a single space so reasoning flows as prose.
-          if (reasoningText) reasoningText = reasoningText.replace(/\s+/g, " ");
+          // Pass raw chunk text; consumers join via appendReasoningText so
+          // per-token newlines don't become double-spaces or letter-spacing.
           yield {
             type: "reasoning.delta",
             text: reasoningText,
@@ -213,9 +280,7 @@ export class OpenRouterProvider implements LLMProvider {
     if (!fromStream) return undefined;
     if (!generationId) return fromStream;
 
-    const looksLikeRouter =
-      !fromStream.routedModel ||
-      /^(openrouter\/(free|auto)|openrouter\/router)/i.test(fromStream.routedModel);
+    const looksLikeRouter = !fromStream.routedModel || isRouterModel(fromStream.routedModel);
     if (fromStream.costUsd != null && !looksLikeRouter) return fromStream;
 
     try {

@@ -40,3 +40,5 @@ export {
   AGENT_MODES,
   CHAT_DISPLAY_MODES,
 } from "./settings/index.js";
+
+export { appendReasoningText, collapseReasoningWhitespace } from "./agent/reasoning-text.js";

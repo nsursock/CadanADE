@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatPart, ToolCallCard } from "../types.js";
+import { appendReasoningText } from "../agent/reasoning-text.js";
 
 let seq = 0;
 let partSeq = 0;
@@ -48,8 +49,8 @@ export class ChatModel {
     if (!msg || !text) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "reasoning") last.text += text;
-    else msg.parts.push({ kind: "reasoning", id: nextPartId("r"), text });
+    if (last?.kind === "reasoning") last.text = appendReasoningText(last.text, text);
+    else msg.parts.push({ kind: "reasoning", id: nextPartId("r"), text: appendReasoningText("", text) });
     this.messages = [...this.messages];
   }
 
