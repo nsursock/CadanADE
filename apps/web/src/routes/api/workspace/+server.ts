@@ -28,12 +28,12 @@ export const POST: RequestHandler = async ({ request }) => {
   const action = body.action as string;
 
   if (action === "open") {
-    const result = await workspaceController.open(String(body.path ?? ""));
+    const result = await workspaceController.open(String(body.path ?? ""), Boolean(body.showHidden));
     await addRecent(result.root);
     return json(result);
   }
   if (action === "refresh") {
-    const tree = await workspaceController.refresh();
+    const tree = await workspaceController.refresh(Boolean(body.showHidden));
     return json({ root: workspaceModel.root, tree });
   }
   if (action === "flat") {
@@ -94,6 +94,30 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ ok: true, tree });
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : "Rename failed" }, { status: 400 });
+    }
+  }
+  if (action === "move") {
+    try {
+      const tree = await workspaceController.move(String(body.source ?? ""), String(body.dest ?? ""));
+      return json({ ok: true, tree });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Move failed" }, { status: 400 });
+    }
+  }
+  if (action === "createDirectory") {
+    try {
+      const tree = await workspaceController.createDirectory(String(body.path ?? ""));
+      return json({ ok: true, tree });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Create directory failed" }, { status: 400 });
+    }
+  }
+  if (action === "createFile") {
+    try {
+      const tree = await workspaceController.createFile(String(body.path ?? ""), String(body.content ?? ""));
+      return json({ ok: true, tree });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Create file failed" }, { status: 400 });
     }
   }
 

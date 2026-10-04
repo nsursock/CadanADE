@@ -88,7 +88,7 @@ export class WorkspaceService {
     this.gitignoreCache.delete(path.resolve(root));
   }
 
-  async listTree(root: string, rel = "", depth = 0, maxDepth = 4): Promise<TreeNode[]> {
+  async listTree(root: string, rel = "", depth = 0, maxDepth = 4, showHidden = false): Promise<TreeNode[]> {
     const abs = this.assertInside(root, rel || ".");
     const gf = await this.getGitignore(root);
     const entries = await fs.readdir(abs, { withFileTypes: true });
@@ -98,12 +98,12 @@ export class WorkspaceService {
       if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
       return a.name.localeCompare(b.name);
     })) {
-      if (SKIP.has(entry.name) || entry.name.startsWith(".")) continue;
+      if (SKIP.has(entry.name) || (!showHidden && entry.name.startsWith("."))) continue;
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       const isDir = entry.isDirectory();
       if (gf.ignored(childRel, isDir)) continue;
       if (isDir) {
-        const children = depth < maxDepth ? await this.listTree(root, childRel, depth + 1, maxDepth) : [];
+        const children = depth < maxDepth ? await this.listTree(root, childRel, depth + 1, maxDepth, showHidden) : [];
         nodes.push({ name: entry.name, path: childRel, kind: "dir", children });
       } else if (entry.isFile()) {
         nodes.push({ name: entry.name, path: childRel, kind: "file" });
@@ -174,6 +174,18 @@ export class WorkspaceService {
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, content, "utf8");
     return { path: rel, content, hash: this.hash(content) };
+  }
+
+  async createDirectory(root: string, rel: string) {
+    const abs = this.assertInside(root, rel);
+    try {
+      await fs.access(abs);
+      throw new Error("Directory already exists");
+    } catch (e) {
+      if ((e as Error).message === "Directory already exists") throw e;
+    }
+    await fs.mkdir(abs, { recursive: true });
+    return { path: rel };
   }
 
   async editFile(
@@ -337,5 +349,29 @@ export class WorkspaceService {
     }
     await fs.rename(oldAbs, newAbs);
     return { oldPath: oldRel, newPath: path.relative(resolvedRoot, newAbs) };
+  }
+
+  async movePath(root: string, sourceRel: string, destRel: string) {
+    const resolvedRoot = path.resolve(root);
+    const sourceAbs = this.assertInside(root, sourceRel);
+    const destAbs = this.assertInside(root, destRel);
+    const destStat = await fs.stat(destAbs);
+    if (!destStat.isDirectory()) {
+      throw new Error("Destination is not a directory");
+    }
+    const baseName = path.basename(sourceAbs);
+    const newAbs = path.resolve(destAbs, baseName);
+    if (newAbs !== resolvedRoot && !newAbs.startsWith(resolvedRoot + path.sep)) {
+      throw new Error("New path escapes workspace root");
+    }
+    if (sourceAbs === newAbs) throw new Error("Source and destination are the same");
+    try {
+      await fs.access(newAbs);
+      throw new Error("A file with this name already exists in destination");
+    } catch (e) {
+      if ((e as Error).message === "A file with this name already exists in destination") throw e;
+    }
+    await fs.rename(sourceAbs, newAbs);
+    return { oldPath: sourceRel, newPath: path.relative(resolvedRoot, newAbs) };
   }
 }
