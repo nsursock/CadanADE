@@ -7,6 +7,17 @@ const ROUTERS = [
   { id: "openrouter/auto", name: "OpenRouter Auto (paid)" },
 ];
 
+/**
+ * Agents need function calling; a model without it can only ever answer in prose,
+ * which ends the turn after one reply. Routers are exempt — they pick a backend.
+ */
+function supportsTools(m: { supported_parameters?: string[] }): boolean {
+  // Custom base URLs may omit the field entirely — trust those rather than
+  // emptying the picker.
+  if (!m.supported_parameters) return true;
+  return m.supported_parameters.includes("tools");
+}
+
 /** Fetch OpenRouter model catalog when a key is configured. */
 export const GET: RequestHandler = async () => {
   const cfg = getProviderConfig();
@@ -26,11 +37,17 @@ export const GET: RequestHandler = async () => {
       return json({ free: ROUTERS.slice(0, 1), paid: [], error: `OpenRouter ${res.status}` }, { status: 502 });
     }
     const data = (await res.json()) as {
-      data?: Array<{ id: string; name?: string; pricing?: { prompt?: string } }>;
+      data?: Array<{
+        id: string;
+        name?: string;
+        pricing?: { prompt?: string };
+        supported_parameters?: string[];
+      }>;
     };
     const free: { id: string; name: string }[] = [];
     const paid: { id: string; name: string }[] = [];
     for (const m of data.data ?? []) {
+      if (!supportsTools(m)) continue;
       const entry = { id: m.id, name: m.name ?? m.id };
       const prompt = m.pricing?.prompt;
       if (m.id.includes(":free") || prompt === "0" || prompt === "0.0") free.push(entry);
