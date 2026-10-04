@@ -124,6 +124,39 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description:
+        "Search the web using a search engine. Returns a list of results with titles, URLs, and snippets.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query." },
+          limit: { type: "number", description: "Maximum number of results (default: 10)." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_fetch",
+      description:
+        "Fetch content from a URL. Returns the page content as text, markdown, or HTML.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "URL to fetch." },
+          format: { type: "string", enum: ["text", "markdown", "html"], description: "Output format (default: markdown)." },
+          timeout: { type: "number", description: "Timeout in seconds (default: 30, max: 120)." },
+        },
+        required: ["url"],
+      },
+    },
+  },
 ];
 
 export const APPROVAL_REQUIRED = new Set(["delete_file"]);

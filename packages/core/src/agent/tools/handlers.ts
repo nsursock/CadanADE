@@ -212,5 +212,50 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const result = await ctx.workspace.execute(ctx.root, command, timeoutMs);
       return JSON.stringify(capCommandResult(result));
     },
+    async web_search(args, ctx) {
+      const query = String(args.query ?? "");
+      const limit = typeof args.limit === "number" ? args.limit : 10;
+      const response = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(query) + "&format=json&pretty=1");
+      if (!response.ok) {
+        throw new Error(`Web search failed: ${response.status}`);
+      }
+      const data = await response.json();
+      const results = data.RelatedTopics
+        .filter((r: any) => r.FirstURL && r.Text)
+        .slice(0, limit)
+        .map((r: any) => ({
+          title: r.Text.split(" - ")[0] ?? "Result",
+          url: r.FirstURL,
+          snippet: r.Text,
+        }));
+      return JSON.stringify({ query, results }, null, 2);
+    },
+    async web_fetch(args, ctx) {
+      const url = String(args.url ?? "");
+      const format = (args.format as "text" | "markdown" | "html") ?? "markdown";
+      const timeout = typeof args.timeout === "number" ? Math.min(args.timeout, 120) : 30;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
+      try {
+        const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; CadanADE/0.1)" } });
+        if (!response.ok) {
+          throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+        }
+        let content = await response.text();
+        if (format === "markdown") {
+          // Simple HTML to markdown conversion for readability
+          content = content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+            .replace(/<[^>]+>/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 50000);
+        }
+        return JSON.stringify({ url, format, content }, null, 2);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
   };
 }
