@@ -34,6 +34,7 @@
     appState.workerModelId = DEFAULT_SETTINGS.workerModelId;
     appState.agentMode = DEFAULT_SETTINGS.agentMode;
     appState.chatDisplayMode = DEFAULT_SETTINGS.chatDisplayMode;
+    appState.setToastAutoDismiss(DEFAULT_SETTINGS.toastAutoDismiss);
     document.documentElement.dataset.theme = DEFAULT_SETTINGS.themeId;
     document.documentElement.classList.toggle("perf-lite", DEFAULT_SETTINGS.perfLite);
     void fetch("/api/settings", {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import IconPalette from "@tabler/icons-svelte/icons/palette";
   import IconSparkles from "@tabler/icons-svelte/icons/sparkles";
+  import IconBell from "@tabler/icons-svelte/icons/bell";
   import IconCheck from "@tabler/icons-svelte/icons/check";
   import { THEME_IDS, type ThemeId, patchSettings } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
@@ -33,6 +34,11 @@
   function setThree(on: boolean) {
     appState.threeBackground = on;
     patchSettings({ threeBackground: on });
+  }
+
+  function setAutoDismiss(on: boolean) {
+    appState.setToastAutoDismiss(on);
+    patchSettings({ toastAutoDismiss: on });
   }
 </script>
 
@@ -93,6 +99,55 @@
           onchange={(e) => setThree((e.currentTarget as HTMLInputElement).checked)}
         />
       </label>
+    </div>
+  </div>
+
+  <div>
+    <div class="flex items-center gap-2 mb-1">
+      <IconBell size={16} stroke={1.75} class="text-scifi-primary" />
+      <h3 class="pane-title !normal-case !tracking-normal !text-sm"><span class="pane-title-bar"></span> Notifications</h3>
+    </div>
+    <p class="text-xs text-scifi-muted mb-3">Status messages from saves, copies, moves and the agent.</p>
+
+    <div class="list">
+      <label class="list-row cursor-pointer">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold leading-tight">Auto dismiss</div>
+          <div class="text-xs text-scifi-muted mt-0.5">
+            {appState.toastAutoDismiss
+              ? "Notifications close themselves after a moment"
+              : "Notifications stay on screen until you close them"}
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          class="toggle shrink-0"
+          checked={appState.toastAutoDismiss}
+          onchange={(e) => setAutoDismiss((e.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mt-3">
+      <button
+        type="button"
+        class="btn btn-sm"
+        onclick={() => appState.showToast("This is what a notification looks like", "info")}
+      >
+        Test notification
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm"
+        onclick={() => appState.showToast("Something went wrong (this one is sticky if auto dismiss is off)", "error")}
+      >
+        Test error
+      </button>
+      {#if appState.toasts.length}
+        <button type="button" class="btn btn-ghost btn-sm" onclick={() => appState.clearToasts()}>
+          Clear all
+        </button>
+      {/if}
     </div>
   </div>
 </section>

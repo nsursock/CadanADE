@@ -15,6 +15,7 @@
     appState.workerModelId = s.workerModelId || "openrouter/free";
     appState.agentMode = s.agentMode === "thrift" ? "thrift" : "normal";
     appState.chatDisplayMode = s.chatDisplayMode === "verbose" ? "verbose" : "compact";
+    appState.setToastAutoDismiss(s.toastAutoDismiss);
     document.documentElement.dataset.theme = s.themeId;
     document.documentElement.classList.toggle("perf-lite", s.perfLite);
 
