@@ -76,6 +76,44 @@ pnpm --filter @cadan/desktop run electron:repair
 
 Env fallbacks: `OPENROUTER_API_KEY`, `CADAN_MODEL` (see `apps/web/.env.example`).
 
+## Agent self-verification
+
+The agent cannot mark its own work done. When a request carries a spec — either
+inline or as a referenced file such as `@SPEC.md` — Cadan derives a
+**requirements ledger** from it before starting work: one line per MUST, STRICT,
+"do not", numeric limit, named library, banned dependency and named deliverable.
+The ledger is written to `.cadan/REQUIREMENTS.md` and re-injected at the start of
+every turn.
+
+Each line ends in a verdict the **harness** writes, never the model:
+
+| Verdict | Meaning |
+| --- | --- |
+| PASS | The harness check ran and agreed |
+| FAIL | The check ran and disagreed (the note says where and what it found) |
+| DEVIATION | Recorded by the agent with a stated reason — nothing is substituted silently |
+| UNVERIFIED | No measured evidence attached yet |
+
+Generic checks, none of which need project knowledge:
+
+- named libraries are **imported and called**, not just mentioned or listed
+- banned dependencies are absent from code **and** dependency files
+- named deliverables exist and are non-empty
+- numeric limits are compared against the numbers in the attached output
+- evidence quotes must appear in real tool output from the turn — invented ones
+  are rejected when the agent tries to record them
+- files the agent touched are scanned for stubs: TODO / "would" / "in practice" /
+  placeholder markers, functions that only return a constant, unused imports
+- command output is screened for plausibility: identical output across repeated
+  runs, duplicated rows, constant columns, values outside a declared range
+- narrowed runs (`-k`, `--limit`, `--sample`, …) are labelled in the report
+
+A text reply is treated as a claim, not evidence. While lines are unverified the
+completion gate refuses the claim and hands the agent the failing lines (up to 4
+retries); the turn then ends with an explicit FAIL report. The report is
+generated from the ledger and shown under the chat, so a bare ✅ is never the
+whole story.
+
 ## Scripts
 
 | Command | Description |

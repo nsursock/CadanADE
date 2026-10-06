@@ -68,6 +68,8 @@ pnpm --filter @cadan/desktop typecheck
 - Do not claim that an interrupted or timed-out command succeeded.
 - If a command fails, report the failure. Do not guess or present assumptions as confirmed.
 
+**The agent is gated too.** A spec-bearing request produces a requirements ledger in `.cadan/REQUIREMENTS.md`. Verdicts (PASS / FAIL / DEVIATION / UNVERIFIED) are written by the harness, not the model: libraries must be imported *and* called, banned deps absent, deliverables non-empty, limits measured from attached output, and files you touched free of stub markers, constant-returning functions and unused imports. Evidence quotes are matched against real tool output — quoting something that never ran is rejected. If a requirement cannot be met, record a DEVIATION with the reason instead of substituting silently.
+
 ## Code style
 
 - Match neighboring files: Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`), TypeScript, Tailwind utilities + ScifiUI classes.
