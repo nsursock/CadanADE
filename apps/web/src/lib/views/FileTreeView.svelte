@@ -607,12 +607,12 @@ let pendingDelete = $state<TreeNode | null>(null);
             <IconRefresh size={14} stroke={1.75} />
           </button>
         </Tooltip>
-        <Tooltip tip="Show hidden files" prefer="bottom">
+        <Tooltip tip="Show hidden and gitignored files" prefer="bottom">
           <button
             type="button"
             class="icon-btn btn-xs"
             class:active={showHidden}
-            aria-label={showHidden ? "Hide hidden files" : "Show hidden files"}
+            aria-label={showHidden ? "Hide hidden and gitignored files" : "Show hidden and gitignored files"}
             aria-pressed={showHidden}
             onclick={toggleShowHidden}
           >

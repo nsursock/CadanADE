@@ -101,7 +101,7 @@ export class WorkspaceService {
       if (SKIP.has(entry.name) || (!showHidden && entry.name.startsWith("."))) continue;
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       const isDir = entry.isDirectory();
-      if (gf.ignored(childRel, isDir)) continue;
+      if (!showHidden && gf.ignored(childRel, isDir)) continue;
       if (isDir) {
         const children = depth < maxDepth ? await this.listTree(root, childRel, depth + 1, maxDepth, showHidden) : [];
         nodes.push({ name: entry.name, path: childRel, kind: "dir", children });
