@@ -7,30 +7,24 @@ import type {
   ThemeId,
   TreeNode,
   ToolCallCard,
+  SessionUsage,
+  TurnUsage,
+  Verification,
 } from "@cadan/core";
-import { appendReasoningText } from "@cadan/core";
+import { appendReasoning, normalizeTextDelta, DEFAULT_SETTINGS } from "@cadan/core";
 
-export type SessionUsage = {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  costUsd: number;
-  turns: number;
+export type ToastVariant = "info" | "success" | "warning" | "error";
+
+export type ToastItem = {
+  id: number;
+  text: string;
+  variant: ToastVariant;
 };
 
-export type TurnUsage = {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  costUsd: number;
-  agentMode: string;
-  finishReason?: string;
-  maxTokens?: number;
-  /** Configured model id (e.g. openrouter/free). */
-  model?: string;
-  /** Actual model OpenRouter served. */
-  routedModel?: string;
-};
+/** How long a notification stays when auto dismiss is on. */
+const TOAST_MS = 2800;
+/** Newest kept on screen; older ones are dropped rather than covering the UI. */
+const MAX_TOASTS = 4;
 
 export type ChatSessionTab = {
   id: string;
@@ -46,6 +40,7 @@ export type ChatSessionTab = {
   turnUsage: TurnUsage | null;
   /** Why the last turn stopped (iteration budget, truncation, repeat guard, …). */
   turnNote: string | null;
+  verification: Verification | null;
   sessionUsage: SessionUsage;
 };
 
@@ -72,6 +67,7 @@ function makeChatTab(sessionId: string, index: number): ChatSessionTab {
     openRouterSessionId: null,
     turnUsage: null,
     turnNote: null,
+    verification: null,
     sessionUsage: emptyUsage(),
   };
 }
@@ -99,7 +95,11 @@ class AppState {
   activeTerminalId = $state<string | null>(null);
   private terminalSeq = 0;
 
-  toast = $state<{ text: string; variant: string } | null>(null);
+  toasts = $state<ToastItem[]>([]);
+  /** Off: notifications stay until dismissed. */
+  toastAutoDismiss = $state(DEFAULT_SETTINGS.toastAutoDismiss);
+  private toastSeq = 0;
+  private toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
   settingsOpen = $state(false);
   fileClipboard = $state<{ path: string; operation: "cut" | "copy" } | null>(null);
   /** Files added to chat context from outside ChatView (e.g. file browser context menu). */
@@ -169,11 +169,46 @@ class AppState {
     return this.activeChat?.sessionUsage ?? emptyUsage();
   }
 
-  showToast(text: string, variant = "info") {
-    this.toast = { text, variant };
-    setTimeout(() => {
-      if (this.toast?.text === text) this.toast = null;
-    }, 2800);
+  showToast(text: string, variant: ToastVariant = "info") {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const id = ++this.toastSeq;
+    // Newest first, bounded so a burst of failures can't cover the workspace.
+    const overflow = this.toasts.slice(0, MAX_TOASTS - 1);
+    for (const dropped of overflow) this.clearToastTimer(dropped.id);
+    this.toasts = [{ id, text: trimmed, variant }, ...overflow];
+    if (!this.toastAutoDismiss) return;
+    this.toastTimers.set(
+      id,
+      setTimeout(() => {
+        this.dismissToast(id);
+      }, TOAST_MS),
+    );
+  }
+
+  dismissToast(id: number) {
+    this.clearToastTimer(id);
+    this.toasts = this.toasts.filter((t) => t.id !== id);
+  }
+
+  clearToasts() {
+    for (const timer of this.toastTimers.values()) clearTimeout(timer);
+    this.toastTimers.clear();
+    this.toasts = [];
+  }
+
+  /** Turning auto-dismiss off freezes whatever is already on screen. */
+  setToastAutoDismiss(on: boolean) {
+    this.toastAutoDismiss = on;
+    if (on) return;
+    for (const timer of this.toastTimers.values()) clearTimeout(timer);
+    this.toastTimers.clear();
+  }
+
+  private clearToastTimer(id: number) {
+    const timer = this.toastTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.toastTimers.delete(id);
   }
 
   requestScrollToLine(line: number) {
@@ -312,7 +347,10 @@ class AppState {
     if (!chat) return;
     chat.streaming = streaming;
     chat.status = status;
-    if (streaming) chat.turnNote = null;
+    if (streaming) {
+      chat.turnNote = null;
+      chat.verification = null;
+    }
     this.bumpChats();
   }
 
@@ -332,6 +370,23 @@ class AppState {
     const chat = this.chatById(sessionKey);
     if (!chat) return;
     chat.pendingApproval = pending;
+    this.bumpChats();
+  }
+
+  /** Harness verdict + report for the turn that just finished. */
+  setChatVerification(sessionKey: string, data: Record<string, unknown> | undefined) {
+    const chat = this.chatById(sessionKey);
+    if (!chat || !data) return;
+    const verdict = data.verdict;
+    if (verdict !== "pass" && verdict !== "deviations" && verdict !== "fail") return;
+    chat.verification = {
+      verdict,
+      summary: String(data.summary ?? ""),
+      report: String(data.report ?? ""),
+      blockers: Number(data.blockers ?? 0),
+      warnings: Number(data.warnings ?? 0),
+      ledgerPath: String(data.ledgerPath ?? ""),
+    };
     this.bumpChats();
   }
 
@@ -389,6 +444,7 @@ class AppState {
     chat.turnUsage = null;
     chat.openRouterSessionId = null;
     chat.turnNote = null;
+    chat.verification = null;
     chat.sessionUsage = emptyUsage();
     this.bumpChats();
   }
@@ -414,8 +470,11 @@ class AppState {
     if (!msg) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "reasoning") last.text = appendReasoningText(last.text, text);
-    else msg.parts.push({ kind: "reasoning", id: `r-${Date.now()}-${msg.parts.length}`, text: appendReasoningText("", text) });
+    const append = last?.kind === "reasoning" ? appendReasoning(last.text, text) : appendReasoning("", text);
+    // Whitespace-only deltas normalize to nothing — don't re-render for them.
+    if (!append.text) return;
+    if (last?.kind === "reasoning") last.text = append.text;
+    else msg.parts.push({ kind: "reasoning", id: `r-${Date.now()}-${msg.parts.length}`, text: append.text });
     this.bumpChats();
   }
 
@@ -424,10 +483,14 @@ class AppState {
     if (!chat || !text) return;
     const msg = this.lastAssistant(chat);
     if (!msg) return;
+    // Cap whitespace floods so a model streaming space/newline tokens freely
+    // can't bury the sentence it is actually saying.
+    const delta = normalizeTextDelta(text);
+    if (!delta.trim()) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "text") last.text += text;
-    else msg.parts.push({ kind: "text", id: `t-${Date.now()}-${msg.parts.length}`, text });
+    if (last?.kind === "text") last.text = normalizeTextDelta(last.text + delta);
+    else msg.parts.push({ kind: "text", id: `t-${Date.now()}-${msg.parts.length}`, text: delta });
     this.syncMessageDerived(msg);
     this.bumpChats();
   }

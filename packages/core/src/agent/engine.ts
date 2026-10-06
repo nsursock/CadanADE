@@ -3,9 +3,10 @@ import {
   commandMatchesCheck,
   extractCheckCommands,
   parseCommandExitCode,
+  parseCommandStreams,
   parseExecutedCommand,
 } from "./check-commands.js";
-import { compactToolMessages } from "./context-compact.js";
+import { compactMessages, CHARS_PER_TOKEN } from "./context-compact.js";
 import {
   looksUnfinished,
   MAX_REASONING_NUDGES,
@@ -15,11 +16,18 @@ import {
   REPEAT_TOOL_NUDGE,
   UNFINISHED_TURN_NUDGE,
 } from "./continuation.js";
-import { appendReasoningText } from "./reasoning-text.js";
+import { extractRequirements } from "./ledger/extract.js";
+import { gateNudge, isBareCompletionClaim } from "./ledger/gate.js";
+import { ledgerFile } from "./ledger/report.js";
+import { renderLedgerPrompt, renderLedgerReminder } from "./ledger/render.js";
+import { LedgerRunner, type GateRun } from "./ledger/runner.js";
+import { hydrate, LEDGER_PATH, loadSpec, readLedgerFile, writeLedgerFile } from "./ledger/store.js";
+import { createLedgerHandle } from "./ledger/update.js";
+import { appendReasoning } from "./reasoning-text.js";
 import type { LLMProvider, ProviderMessage, ProviderToolCall, ProviderUsage } from "./provider.js";
 import { isRouterModel, openRouterSessionId } from "./provider.js";
 import { AgentSession } from "./session.js";
-import { APPROVAL_REQUIRED, TOOL_SCHEMAS } from "./tools/schema.js";
+import { APPROVAL_REQUIRED, toolSchemasFor } from "./tools/schema.js";
 import { createToolHandlers } from "./tools/handlers.js";
 import type { PendingChangeStore } from "../services/pending-changes.js";
 import type { WorkspaceService } from "../services/workspace-service.js";
@@ -31,10 +39,23 @@ Do not invent library APIs — inspect installed packages or use the simplest do
 If output was truncated (finish_reason=length), make a smaller change or ask to raise max tokens / start a fresh chat.
 Don't overthink: keep reasoning short; take the simplest next tool action instead of long speculation or redesign monologues.`;
 
+/**
+ * Self-verification rules. A completion claim is a claim, not evidence: the
+ * harness runs the checks and writes the verdicts.
+ */
+const VERIFY_RULES = `Verify your own work; do not describe it.
+Every requirement you were given is in a ledger at the top of this conversation. Mark each line with update_ledger as it becomes true, with a quote copied verbatim from output you actually produced. Invented quotes are rejected against the real tool results.
+Do not claim done while a line is TODO, or while a check is red. Fix the work instead of the description.
+Never substitute silently: if a required library, tool or feature cannot work here, record update_ledger(id, "deviation", note) with what you did instead. It will be listed in the report.
+Never shrink tests, data or parameters to make something pass. After a timeout, profile and diagnose before reducing anything — and label any reduction you do keep.
+Write acceptance checks before the implementation when the spec has testable lines. A suite that passes while required behavior is stubbed is not evidence.
+Leave no stubs in code you touched: no TODO, "would", "in practice", placeholder, constant-returning functions or unused imports.`;
+
 const SYSTEM_NORMAL = `You are Cadan, an autonomous coding agent in a local workspace IDE.
 If the workspace has an AGENTS.md file, read it at the start of a new conversation for workspace-specific guidance.
 Use tools to inspect and edit files. Prefer small, correct changes.
 ${EDIT_BIAS}
+${VERIFY_RULES}
 Before creating a new file, list the workspace and read a neighboring file to match existing conventions (language, extension, style).
 When asked to write code, create or edit files in the workspace — never paste code only into your reply.
 Match the file type of existing files in the workspace; do not default to markdown when the workspace uses code files.
@@ -48,6 +69,7 @@ const SYSTEM_THRIFT = `You are Cadan, an autonomous coding agent in a local work
 If the workspace has an AGENTS.md file, read it at the start of a new conversation for workspace-specific guidance.
 Use tools to inspect and edit files. Prefer small, correct changes.
 ${EDIT_BIAS}
+${VERIFY_RULES}
 Before creating a new file, list the workspace and read a neighboring file to match existing conventions (language, extension, style).
 When asked to write code, create or edit files in the workspace — never paste code only into your reply.
 Match the file type of existing files in the workspace; do not default to markdown when the workspace uses code files.
@@ -70,6 +92,8 @@ const AUTO_CONTINUE_NUDGE =
 
 const DEFAULT_MODEL = process.env.CADAN_MODEL ?? "openrouter/free";
 const MAX_CHECK_RETRIES = 5;
+/** Completion-gate retries before the turn ends with an explicit FAIL report. */
+const MAX_GATE_RETRIES = 4;
 
 /** Model calls per budget segment. Reaching it grants an auto-continue, not a stop. */
 export const DEFAULT_MAX_ITERATIONS = 50;
@@ -111,16 +135,64 @@ export interface EngineOptions {
   maxIterations?: number;
   /** Completion budget passed to the provider (default 4096). */
   maxTokens?: number;
-  /** Keep this many recent tool results fully; older ones are stubbed. */
-  keepRecentToolResults?: number;
+  /**
+   * Prompt budget in tokens. The conversation is compacted to fit before each model
+   * call, so a long session degrades older history instead of overflowing the window.
+   * Measured usage tightens this further within a turn (see `PROMPT_BUDGET_TOKENS`).
+   */
+  promptBudgetTokens?: number;
   /** Workspace-relative file paths to inject as context before the user message. */
   contextFiles?: string[];
   pendingChanges?: PendingChangeStore;
   emit: (event: AgentEvent) => void;
 }
 
-const PROMPT_WARN_TOKENS = 20_000;
-const PROMPT_HIGH_TOKENS = 40_000;
+/**
+ * Prompt budget when the caller doesn't specify one. Deliberately well under the
+ * smallest window OpenRouter routes to (32k): an over-budget request is a hard 400
+ * that ends the turn, while an under-budget one just compacts a little more.
+ */
+const PROMPT_BUDGET_TOKENS = 24_000;
+
+/** Fractions of the active prompt budget that trip the "context growing" statuses. */
+const PROMPT_WARN_RATIO = 0.75;
+const PROMPT_HIGH_RATIO = 0.9;
+
+/** Provider-reported context overflow — a retryable shape, not a dead turn. */
+const CONTEXT_OVERFLOW_RE =
+  /maximum context length is (\d+) tokens.*?resulted in (\d+) tokens/i;
+
+/**
+ * Turn a provider's context-overflow 400 into advice the user can act on.
+ * OpenRouter's message nests a raw provider string several layers deep, so the
+ * original text is kept after the summary — but the summary leads.
+ */
+function contextOverflowMessage(raw: string): string {
+  const m = CONTEXT_OVERFLOW_RE.exec(raw);
+  if (!m) {
+    return (
+      "Context overflow — the conversation no longer fits this model's window. " +
+      "Start a fresh chat to continue."
+    );
+  }
+  const limit = Number(m[1]);
+  const needed = Number(m[2]);
+  return (
+    `Context overflow — the conversation needed ${needed.toLocaleString()} tokens but this ` +
+    `model's window is ${limit.toLocaleString()}. Older tool results and reasoning were already ` +
+    `trimmed, so what remains is the current request itself. Start a fresh chat, split the ` +
+    `work into smaller requests, or lower Prompt budget in Settings.`
+  );
+}
+
+/** Compact-and-retry a context overflow at a reduced budget (bounded, per turn). */
+const CONTEXT_OVERFLOW_RETRIES = 2;
+const CONTEXT_OVERFLOW_BACKOFF = 0.5;
+
+/** OpenRouter wraps provider errors in a few shapes; match the overflow wording. */
+function isContextOverflow(message: string): boolean {
+  return /maximum context length|context length exceeded|prompt is too long|too many tokens/i.test(message);
+}
 
 function emptyUsage(): ProviderUsage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
@@ -144,7 +216,7 @@ export class AgentEngine {
     const agentMode: AgentMode = this.opts.agentMode ?? "normal";
     const maxIterations = clampMaxIterations(this.opts.maxIterations);
     const maxTokens = this.opts.maxTokens ?? 4096;
-    const keepRecentToolResults = this.opts.keepRecentToolResults ?? 6;
+    let budgetTokens = this.opts.promptBudgetTokens ?? PROMPT_BUDGET_TOKENS;
     const signal = session.beginTurn();
     const handlers = createToolHandlers();
     const system = agentMode === "thrift" ? SYSTEM_THRIFT : SYSTEM_NORMAL;
@@ -165,9 +237,10 @@ export class AgentEngine {
     /** Latest exit code per check command (undefined = never run). */
     const checkResults = new Map<string, number | null>();
     let checkRetries = 0;
-    const stepBudget = checkCommands.length ? maxIterations + MAX_CHECK_RETRIES : maxIterations;
-    const maxIters = stepBudget * (MAX_AUTO_CONTINUES + 1);
+    let stepBudget = checkCommands.length ? maxIterations + MAX_CHECK_RETRIES : maxIterations;
+    let maxIters = stepBudget * (MAX_AUTO_CONTINUES + 1);
     let autoContinues = 0;
+    let contextRetries = 0;
 
     const track = (u: ProviderUsage) => {
       addUsage(turnUsage, u);
@@ -227,6 +300,86 @@ export class AgentEngine {
         return typeof code === "number" && code === 0;
       });
 
+    // ---- Requirements ledger -------------------------------------------------
+    // Derived from the spec (or the request itself) before any work starts, so
+    // "done" is measured against the spec rather than the model's memory of it.
+    const spec = await loadSpec(workspace, root, userText);
+    const derived = extractRequirements(spec?.text ?? userText, spec?.path);
+    const ledger = derived.items.length ? derived : null;
+    const ledgerHandle = ledger ? createLedgerHandle(ledger) : null;
+    const runner = ledgerHandle
+      ? new LedgerRunner({
+          workspace,
+          root,
+          handle: ledgerHandle,
+          writtenThisTurn,
+        })
+      : null;
+    const toolSchemas = toolSchemasFor(Boolean(ledgerHandle));
+    let gateRun: GateRun | null = null;
+    let gateRetries = 0;
+    let gateReported = false;
+
+    const ensureGate = async (): Promise<GateRun> => {
+      gateRun ??= await runner!.run(checkRecords());
+      return gateRun;
+    };
+
+    const checkRecords = () =>
+      checkCommands.map((command) => ({ command, code: checkResults.get(command) ?? null }));
+
+    /** Everything the finish payload needs, including the harness's own verdict. */
+    const finishPayload = async (message?: string) => {
+      const base = usagePayload();
+      if (!ledgerHandle) return message ? { message, ...base } : base;
+      const gate = await ensureGate();
+      await writeLedgerFile(workspace, root, gate.ledgerFile).catch(() => {});
+      if (!gateReported) {
+        gateReported = true;
+        emit(
+          agentEvent("verify", session.id, {
+            verdict: gate.verdict,
+            summary: gate.summary,
+            report: gate.report,
+            blockers: gate.blockers.length,
+            warnings: gate.warnings.length,
+            ledgerPath: LEDGER_PATH,
+            items: ledgerHandle.ledger.items.map((i) => ({
+              id: i.id,
+              kind: i.kind,
+              status: i.status,
+              verdict: i.verdict ?? null,
+              detail: i.detail ?? null,
+            })),
+          }),
+        );
+      }
+      return {
+        ...(message ? { message } : {}),
+        ...base,
+        verification: gate.verdict,
+        verificationSummary: gate.summary,
+        report: gate.report,
+        ledgerPath: LEDGER_PATH,
+      };
+    };
+
+    if (ledgerHandle) {
+      stepBudget += MAX_GATE_RETRIES;
+      maxIters = stepBudget * (MAX_AUTO_CONTINUES + 1);
+      hydrate(ledger!, await readLedgerFile(workspace, root));
+      await writeLedgerFile(workspace, root, ledgerFile(ledger!, [])).catch(() => {});
+      emit(
+        agentEvent("verify", session.id, {
+          phase: "ledger",
+          items: ledgerHandle.ledger.items.length,
+          specPath: ledger!.specPath ?? null,
+          ledgerPath: LEDGER_PATH,
+        }),
+      );
+      session.messages.push({ role: "system", content: renderLedgerPrompt(ledger!) });
+    }
+
     const checksPendingDetail = () => {
       const parts: string[] = [];
       for (const c of checkCommands) {
@@ -277,6 +430,9 @@ export class AgentEngine {
             }),
           );
           session.messages.push({ role: "system", content: AUTO_CONTINUE_NUDGE });
+          if (ledgerHandle) {
+            session.messages.push({ role: "system", content: renderLedgerReminder(ledger!) });
+          }
         }
         emit(
           agentEvent("status", session.id, {
@@ -296,14 +452,30 @@ export class AgentEngine {
         const argBuf: Record<number, { id: string; name: string; args: string }> = {};
         let iterFinishReason = "stop";
         let reasoningLooped = false;
+        /** Set when an error stream was abandoned to retry at a smaller budget. */
+        let overflowed = false;
 
-        const messagesForModel = compactToolMessages(session.messages, {
-          keepRecentTools: keepRecentToolResults,
-        });
+        const compacted = compactMessages(session.messages, budgetTokens * CHARS_PER_TOKEN);
+        const messagesForModel = compacted.messages;
+        if (compacted.compacted || compacted.dropped) {
+          emit(
+            agentEvent("status", session.id, {
+              message:
+                `Context trimmed · ${compacted.compacted} message(s) compacted` +
+                (compacted.dropped ? `, ${compacted.dropped} dropped` : "") +
+                ` · ~${Math.round(compacted.chars / CHARS_PER_TOKEN).toLocaleString()} tokens`,
+              iteration: i + 1,
+              model,
+              routedModel: lastRoutedModel,
+              agentMode,
+              promptTokens: Math.round(compacted.chars / CHARS_PER_TOKEN),
+            }),
+          );
+        }
 
         for await (const ev of provider.chat(messagesForModel, {
           model,
-          tools: TOOL_SCHEMAS,
+          tools: toolSchemas,
           signal,
           sessionId: orSession,
           maxTokens,
@@ -320,8 +492,15 @@ export class AgentEngine {
         })) {
           if (ev.type === "reasoning.delta") {
             if (ev.text) {
-              reasoningText = appendReasoningText(reasoningText, ev.text);
-              emit(agentEvent("reasoning.delta", session.id, { text: ev.text }));
+              // Forward only the text that actually became visible. Reasoning
+              // models stream newline tokens liberally; relaying them raw sends
+              // thousands of events that render as nothing and re-render the
+              // chat on every one.
+              const appended = appendReasoning(reasoningText, ev.text);
+              reasoningText = appended.text;
+              if (appended.increment) {
+                emit(agentEvent("reasoning.delta", session.id, { text: appended.increment }));
+              }
               if (isReasoningLoop(reasoningText)) {
                 reasoningLooped = true;
                 emit(
@@ -365,8 +544,36 @@ export class AgentEngine {
               }),
             );
           } else if (ev.type === "error") {
+            // A context overflow means our prompt was too big, not that the request was
+            // bad. Trim harder and resend rather than ending the turn on a raw 400.
+            if (isContextOverflow(ev.message) && contextRetries < CONTEXT_OVERFLOW_RETRIES) {
+              contextRetries++;
+              budgetTokens = Math.floor(budgetTokens * CONTEXT_OVERFLOW_BACKOFF);
+              emit(
+                agentEvent("status", session.id, {
+                  message: `Context overflow · retrying with a ${budgetTokens.toLocaleString()} token budget`,
+                  iteration: i + 1,
+                  model,
+                  routedModel: lastRoutedModel,
+                  agentMode,
+                  promptTokens: budgetTokens,
+                }),
+              );
+              // Break, not continue: the provider stream is finished after an error, so
+              // `continue` would just fall out of this loop and never resend anything.
+              // The outer iteration re-runs compaction at the smaller budget.
+              overflowed = true;
+              break;
+            }
             session.status = "error";
-            emit(agentEvent("error", session.id, { message: ev.message, ...usagePayload() }));
+            emit(
+              agentEvent("error", session.id, {
+                message: isContextOverflow(ev.message)
+                  ? contextOverflowMessage(ev.message)
+                  : ev.message,
+                ...usagePayload(),
+              }),
+            );
             return;
           } else if (ev.type === "finish") {
             iterFinishReason = ev.finishReason || "stop";
@@ -401,10 +608,12 @@ export class AgentEngine {
                   }),
                 );
               }
-              if (ev.usage.promptTokens >= PROMPT_HIGH_TOKENS) {
+              // Thresholds track the active budget: a session trimmed to fit can still
+              // sit close to its ceiling, and a tightened budget moves the goalposts.
+              if (ev.usage.promptTokens >= budgetTokens * PROMPT_HIGH_RATIO) {
                 emit(
                   agentEvent("status", session.id, {
-                    message: `High context · ${ev.usage.promptTokens.toLocaleString()} prompt tokens — consider a fresh chat`,
+                    message: `High context · ${ev.usage.promptTokens.toLocaleString()} prompt tokens of ${budgetTokens.toLocaleString()} — consider a fresh chat`,
                     iteration: i + 1,
                     model,
                     routedModel: lastRoutedModel,
@@ -412,7 +621,7 @@ export class AgentEngine {
                     promptTokens: ev.usage.promptTokens,
                   }),
                 );
-              } else if (ev.usage.promptTokens >= PROMPT_WARN_TOKENS) {
+              } else if (ev.usage.promptTokens >= budgetTokens * PROMPT_WARN_RATIO) {
                 emit(
                   agentEvent("status", session.id, {
                     message: `Context growing · ${ev.usage.promptTokens.toLocaleString()} prompt tokens`,
@@ -427,6 +636,10 @@ export class AgentEngine {
             }
           }
         }
+
+        // Abandoned mid-stream to retry smaller: nothing was generated, so don't push a
+        // half-formed assistant message or record a finish reason for it.
+        if (overflowed) continue;
 
         // Flush pending tool calls — handles both normal finish and early break.
         for (const slot of Object.values(argBuf)) {
@@ -484,6 +697,33 @@ export class AgentEngine {
             continue;
           }
 
+          // Completion gate: the text reply is a claim, not evidence. The harness
+          // measures the ledger and refuses the claim while lines are unverified.
+          if (ledgerHandle) {
+            const gate = await ensureGate();
+            if (gate.verdict === "fail" && gateRetries < MAX_GATE_RETRIES) {
+              gateRetries++;
+              emit(
+                agentEvent("status", session.id, {
+                  message:
+                    `Completion gate · ${gate.blockers.length} blocking · retry ${gateRetries}/${MAX_GATE_RETRIES}` +
+                    (isBareCompletionClaim(assistantText) ? " · bare claim rejected" : ""),
+                  iteration: i + 1,
+                  model,
+                  routedModel: lastRoutedModel,
+                  agentMode,
+                }),
+              );
+              // Re-measure next time — the fix may change the verdicts.
+              gateRun = null;
+              session.messages.push({
+                role: "system",
+                content: gateNudge(ledger!, gate.blockers, gateRetries, MAX_GATE_RETRIES),
+              });
+              continue;
+            }
+          }
+
           // The model answered instead of acting. Reasoning loops and truncated
           // replies land here too — nudge a bounded number of times before
           // letting the turn end.
@@ -524,8 +764,9 @@ export class AgentEngine {
             session.status = "done";
             emit(
               agentEvent("done", session.id, {
-                message: `Verification failed after ${checkRetries} retries · ${checksPendingDetail()}`,
-                ...usagePayload(),
+                ...(await finishPayload(
+                  `Verification failed after ${checkRetries} retries · ${checksPendingDetail()}`,
+                )),
               }),
             );
             return;
@@ -540,12 +781,7 @@ export class AgentEngine {
                 ? "Truncated (length)"
                 : undefined;
           session.status = "done";
-          emit(
-            agentEvent("done", session.id, {
-              ...(stallReason ? { message: stallReason } : {}),
-              ...usagePayload(),
-            }),
-          );
+          emit(agentEvent("done", session.id, await finishPayload(stallReason)));
           return;
         }
 
@@ -581,8 +817,9 @@ export class AgentEngine {
               session.status = "done";
               emit(
                 agentEvent("done", session.id, {
-                  message: `Repetitive tool calls — the model repeated the same call after ${MAX_REPEAT_NUDGES} warning(s)`,
-                  ...usagePayload(),
+                  ...(await finishPayload(
+                    `Repetitive tool calls — the model repeated the same call after ${MAX_REPEAT_NUDGES} warning(s)`,
+                  )),
                 }),
               );
               return;
@@ -652,6 +889,7 @@ export class AgentEngine {
               writtenThisTurn,
               sessionId: session.id,
               pendingChanges: this.opts.pendingChanges,
+              ...(ledgerHandle ? { ledger: ledgerHandle } : {}),
               onPendingChange: (change) => {
                 const store = this.opts.pendingChanges;
                 emit(
@@ -664,10 +902,15 @@ export class AgentEngine {
             });
             emit(agentEvent("tool.result", session.id, { toolCallId, toolName: name, result }));
             session.messages.push({ role: "tool", tool_call_id: toolCallId, content: result });
+            ledgerHandle?.recordToolResult(name, result);
 
-            if (name === "execute_command" && checkCommands.length) {
+            if (name === "execute_command") {
               const executed = parseExecutedCommand(args);
               const code = parseCommandExitCode(result);
+              if (ledgerHandle) {
+                const { stdout, stderr } = parseCommandStreams(result);
+                ledgerHandle.recordCommand({ command: executed, code, stdout, stderr });
+              }
               for (const check of checkCommands) {
                 if (commandMatchesCheck(executed, check)) {
                   checkResults.set(check, code);
@@ -699,10 +942,11 @@ export class AgentEngine {
       session.status = "done";
       emit(
         agentEvent("done", session.id, {
-          message: `Step budget exhausted after ${maxIters} model calls (${autoContinues} auto-continue${
-            autoContinues === 1 ? "" : "s"
-          }) — send another message to keep going`,
-          ...usagePayload(),
+          ...(await finishPayload(
+            `Step budget exhausted after ${maxIters} model calls (${autoContinues} auto-continue${
+              autoContinues === 1 ? "" : "s"
+            }) — send another message to keep going`,
+          )),
         }),
       );
     } catch (e) {

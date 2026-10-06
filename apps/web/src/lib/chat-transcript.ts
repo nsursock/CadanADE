@@ -14,12 +14,30 @@ function formatTool(part: Extract<ChatPart, { kind: "tool" }>): string {
 function formatPart(part: ChatPart): string {
   switch (part.kind) {
     case "reasoning":
-      return part.text.trim() ? `[Reasoning]\n${part.text}` : "";
+      // Reasoning renders as flowing prose, so a transcript that kept the raw
+      // whitespace would print walls of blank lines for a stream that was
+      // mostly newlines.
+      return part.text.trim() ? `[Reasoning]\n${part.text.replace(/\s+/g, " ").trim()}` : "";
     case "text":
       return part.text;
     case "tool":
       return formatTool(part);
   }
+}
+
+/**
+ * Belt and braces: no transcript should ever contain a wall of blank lines or
+ * a stranded fragment. Collapsing `\n{3,}` alone is not enough — a run of
+ * spaces never produces three consecutive newlines, so a whitespace-flooded
+ * tool result or message slips through with its content marooned on either
+ * side of the gap. Stripping trailing horizontal whitespace first turns those
+ * lines into empty ones, which the newline cap then collapses.
+ */
+function collapseBlankRuns(text: string): string {
+  return text
+    .replace(/[^\S\n]*$/gm, "")
+    .replace(/[^\S\n]{3,}/g, "  ")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 /** Always-verbose plain-text transcript for clipboard export. */
@@ -40,8 +58,8 @@ export function formatChatTranscript(messages: ChatMessage[]): string {
     }
 
     if (!body.trim() && msg.role === "assistant") continue;
-    blocks.push(`### ${label}\n${body.trim()}`);
+    blocks.push(`### ${label}\n${collapseBlankRuns(body.trim())}`);
   }
 
-  return blocks.join("\n\n");
+  return collapseBlankRuns(blocks.join("\n\n"));
 }

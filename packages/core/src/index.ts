@@ -11,6 +11,9 @@ export type {
   ChatDisplayMode,
   FilePayload,
   ToolCallCard,
+  SessionUsage,
+  TurnUsage,
+  Verification,
 } from "./types.js";
 export { THEME_IDS, DEFAULT_THEME } from "./types.js";
 export { isImagePath, imageMimeType, extnameLower } from "./media.js";
@@ -35,6 +38,7 @@ export {
   SETTINGS_STORAGE_KEY,
   mergeSettings,
   clampMaxTokens,
+  clampPromptBudgetTokens,
   loadSettings,
   saveSettings,
   patchSettings,
@@ -42,4 +46,10 @@ export {
   CHAT_DISPLAY_MODES,
 } from "./settings/index.js";
 
-export { appendReasoningText, collapseReasoningWhitespace } from "./agent/reasoning-text.js";
+export {
+  appendReasoning,
+  appendReasoningText,
+  collapseReasoningWhitespace,
+  normalizeTextDelta,
+  type ReasoningAppend,
+} from "./agent/reasoning-text.js";

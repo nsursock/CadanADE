@@ -5,6 +5,9 @@
   import IconClipboardCopy from "@tabler/icons-svelte/icons/clipboard-copy";
   import IconPlus from "@tabler/icons-svelte/icons/plus";
   import IconX from "@tabler/icons-svelte/icons/x";
+  import IconChevronRight from "@tabler/icons-svelte/icons/chevron-right";
+  import IconChevronDown from "@tabler/icons-svelte/icons/chevron-down";
+  import IconShieldCheck from "@tabler/icons-svelte/icons/shield-check";
   import { patchSettings, type AgentEvent, type ChatDisplayMode } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
   import { formatChatTranscript } from "$lib/chat-transcript";
@@ -16,6 +19,7 @@
 
   let copying = $state(false);
   let bootstrapping = $state(false);
+  let reportOpen = $state(false);
   let attachedFiles = $state<string[]>([]);
 
   const chat = $derived(appState.activeChat);
@@ -212,6 +216,12 @@
       case "error":
         appState.showToast(String(ev.data?.message ?? "Agent error"), "error");
         if (ev.data) appState.applyUsage(key, ev.data);
+        break;
+      case "verify":
+        if (ev.data?.verdict) {
+          reportOpen = false;
+          appState.setChatVerification(key, ev.data);
+        }
         break;
       case "done":
         if (ev.data) {
@@ -498,6 +508,52 @@
         <button type="button" class="btn btn-xs btn-danger" onclick={() => reviewAll("rejectAll")}>Reject all</button>
         <button type="button" class="btn btn-xs btn-primary" onclick={() => reviewAll("acceptAll")}>Accept all</button>
       </div>
+    </div>
+  {/if}
+
+  {#if chat?.verification}
+    <div
+      class="mx-2 mb-1 px-2 py-1.5 text-[0.65rem] border border-[var(--scifi-border)] rounded shrink-0"
+    >
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span class="flex items-center gap-1">
+          <IconShieldCheck size={12} />
+          <span
+            class:text-warning={chat.verification.verdict !== "pass"}
+            class:text-success={chat.verification.verdict === "pass"}
+          >
+            Verification · {chat.verification.verdict === "pass"
+              ? "PASS"
+              : chat.verification.verdict === "deviations"
+                ? "DEVIATIONS"
+                : "FAIL"}
+          </span>
+        </span>
+        <span class="text-scifi-text/80">{chat.verification.summary}</span>
+        {#if chat.verification.blockers}
+          <span class="text-warning">{chat.verification.blockers} blocking</span>
+        {/if}
+        {#if chat.verification.ledgerPath}
+          <span class="font-mono opacity-70">{chat.verification.ledgerPath}</span>
+        {/if}
+        <button
+          type="button"
+          class="flex items-center gap-1 opacity-80 hover:opacity-100"
+          onclick={() => (reportOpen = !reportOpen)}
+        >
+          {#if reportOpen}
+            <IconChevronDown size={12} />
+          {:else}
+            <IconChevronRight size={12} />
+          {/if}
+          report
+        </button>
+      </div>
+      {#if reportOpen}
+        <pre
+          class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[0.6rem] leading-relaxed text-scifi-muted border-t border-[var(--scifi-border)] pt-1"
+        >{chat.verification.report}</pre>
+      {/if}
     </div>
   {/if}
 

@@ -4,6 +4,7 @@ import type { WorkspaceService } from "../../services/workspace-service.js";
 import type { AgentMode } from "../../settings/defaults.js";
 import { capCommandResult } from "../context-compact.js";
 import type { LLMProvider, ProviderUsage } from "../provider.js";
+import type { LedgerEvidence, LedgerHandle } from "../ledger/types.js";
 import { summarizeBulkRead } from "./bulk-reader.js";
 import { buildFileOutline, formatOutlineBullets } from "./outline.js";
 
@@ -26,6 +27,8 @@ export interface ToolContext {
   sessionId?: string;
   pendingChanges?: PendingChangeStore;
   onPendingChange?: (change: PendingChange) => void;
+  /** Present only when this turn has a requirements ledger. */
+  ledger?: LedgerHandle;
 }
 
 function trackPending(
@@ -211,6 +214,31 @@ export function createToolHandlers(): Record<string, ToolHandler> {
       const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
       const result = await ctx.workspace.execute(ctx.root, command, timeoutMs);
       return JSON.stringify(capCommandResult(result));
+    },
+    async update_ledger(args, ctx) {
+      const ledger = ctx.ledger;
+      if (!ledger) throw new Error("No requirements ledger for this turn — nothing to update.");
+      const raw = args.evidence as { command?: unknown; quote?: unknown } | undefined;
+      const evidence: LedgerEvidence | undefined =
+        raw && typeof raw.quote === "string"
+          ? { quote: raw.quote, ...(typeof raw.command === "string" ? { command: raw.command } : {}) }
+          : undefined;
+      const result = ledger.update({
+        id: String(args.id ?? ""),
+        status: args.status as "done" | "deviation" | "todo",
+        ...(typeof args.note === "string" ? { note: args.note } : {}),
+        ...(evidence ? { evidence } : {}),
+      });
+      if (!result.ok) return JSON.stringify({ ok: false, error: result.error });
+      const item = result.item;
+      return JSON.stringify({
+        ok: true,
+        id: item.id,
+        status: item.status,
+        requirement: item.text,
+        check: item.check,
+        ledger: ledger.ledger.items.map((i) => ({ id: i.id, status: i.status })),
+      });
     },
     async web_search(args, ctx) {
       const query = String(args.query ?? "");

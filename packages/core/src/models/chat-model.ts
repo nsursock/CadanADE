@@ -1,5 +1,5 @@
 import type { ChatMessage, ChatPart, ToolCallCard } from "../types.js";
-import { appendReasoningText } from "../agent/reasoning-text.js";
+import { appendReasoning, normalizeTextDelta } from "../agent/reasoning-text.js";
 
 let seq = 0;
 let partSeq = 0;
@@ -49,18 +49,25 @@ export class ChatModel {
     if (!msg || !text) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "reasoning") last.text = appendReasoningText(last.text, text);
-    else msg.parts.push({ kind: "reasoning", id: nextPartId("r"), text: appendReasoningText("", text) });
+    const append = last?.kind === "reasoning" ? appendReasoning(last.text, text) : appendReasoning("", text);
+    // Whitespace-only deltas normalize to nothing — don't churn state for them.
+    if (!append.text) return;
+    if (last?.kind === "reasoning") last.text = append.text;
+    else msg.parts.push({ kind: "reasoning", id: nextPartId("r"), text: append.text });
     this.messages = [...this.messages];
   }
 
   appendText(text: string) {
     const msg = this.lastAssistant();
     if (!msg || !text) return;
+    // Cap whitespace floods so a model streaming space/newline tokens freely
+    // can't bury the sentence it is actually saying.
+    const delta = normalizeTextDelta(text);
+    if (!delta.trim()) return;
     msg.parts ??= [];
     const last = msg.parts[msg.parts.length - 1];
-    if (last?.kind === "text") last.text += text;
-    else msg.parts.push({ kind: "text", id: nextPartId("t"), text });
+    if (last?.kind === "text") last.text = normalizeTextDelta(last.text + delta);
+    else msg.parts.push({ kind: "text", id: nextPartId("t"), text: delta });
     this.syncContent(msg);
     this.messages = [...this.messages];
   }

@@ -12,6 +12,7 @@ export const GET: RequestHandler = async () => {
     workerModel: cfg.workerModel,
     agentMode: cfg.agentMode,
     maxTokens: cfg.maxTokens,
+    promptBudgetTokens: cfg.promptBudgetTokens,
     fromEnv: Boolean(process.env.OPENROUTER_API_KEY) && !cfg.apiKey,
   });
 };
@@ -25,6 +26,8 @@ export const POST: RequestHandler = async ({ request }) => {
     workerModel: typeof body.workerModel === "string" ? body.workerModel.trim() : undefined,
     agentMode: body.agentMode === "thrift" || body.agentMode === "normal" ? body.agentMode : undefined,
     maxTokens: body.maxTokens !== undefined ? Number(body.maxTokens) : undefined,
+    promptBudgetTokens:
+      body.promptBudgetTokens !== undefined ? Number(body.promptBudgetTokens) : undefined,
   });
   return json({
     ok: true,
@@ -35,5 +38,6 @@ export const POST: RequestHandler = async ({ request }) => {
     workerModel: next.workerModel,
     agentMode: next.agentMode,
     maxTokens: next.maxTokens,
+    promptBudgetTokens: next.promptBudgetTokens,
   });
 };

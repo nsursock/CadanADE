@@ -4,6 +4,7 @@ export {
   SETTINGS_STORAGE_KEY,
   mergeSettings,
   clampMaxTokens,
+  clampPromptBudgetTokens,
   AGENT_MODES,
   CHAT_DISPLAY_MODES,
 } from "./defaults.js";

@@ -18,9 +18,16 @@ export interface CadanSettings {
   chatDisplayMode: ChatDisplayMode;
   /** Max completion tokens per model call (OpenRouter max_tokens). */
   maxTokens: number;
+  /**
+   * Prompt budget in tokens. Older history is trimmed to fit before each model call.
+   * Lower it for small-context models; a 400 overflow is retried at a reduced budget.
+   */
+  promptBudgetTokens: number;
   themeId: ThemeId;
   threeBackground: boolean;
   perfLite: boolean;
+  /** Off: notifications stay on screen until dismissed. */
+  toastAutoDismiss: boolean;
 }
 
 export const SETTINGS_STORAGE_KEY = "cadan.settings.v1";
@@ -33,9 +40,11 @@ export const DEFAULT_SETTINGS: CadanSettings = {
   agentMode: "normal",
   chatDisplayMode: "compact",
   maxTokens: 4096,
+  promptBudgetTokens: 24_000,
   themeId: "retrowave",
   threeBackground: false,
   perfLite: false,
+  toastAutoDismiss: true,
 };
 
 const LEGACY_DEFAULT_MODEL = "google/gemma-3-27b-it:free";
@@ -50,6 +59,13 @@ export function clampMaxTokens(n: unknown): number {
   const v = typeof n === "number" ? n : Number(n);
   if (!Number.isFinite(v)) return DEFAULT_SETTINGS.maxTokens;
   return Math.min(128_000, Math.max(256, Math.round(v)));
+}
+
+/** Clamp the prompt budget: must leave room for a completion inside a 32k window. */
+export function clampPromptBudgetTokens(n: unknown): number {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return DEFAULT_SETTINGS.promptBudgetTokens;
+  return Math.min(1_000_000, Math.max(4_000, Math.round(v)));
 }
 
 export function mergeSettings(partial: Partial<CadanSettings> | null | undefined): CadanSettings {
@@ -69,5 +85,9 @@ export function mergeSettings(partial: Partial<CadanSettings> | null | undefined
     merged.themeId = DEFAULT_SETTINGS.themeId;
   }
   merged.maxTokens = clampMaxTokens(merged.maxTokens);
+  merged.promptBudgetTokens = clampPromptBudgetTokens(merged.promptBudgetTokens);
+  if (typeof merged.toastAutoDismiss !== "boolean") {
+    merged.toastAutoDismiss = DEFAULT_SETTINGS.toastAutoDismiss;
+  }
   return merged;
 }

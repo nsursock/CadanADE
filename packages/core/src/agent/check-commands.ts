@@ -62,6 +62,19 @@ export function parseCommandExitCode(toolResultJson: string): number | null {
   }
 }
 
+/** Streams from an execute_command tool result, for evidence matching. */
+export function parseCommandStreams(toolResultJson: string): { stdout: string; stderr: string } {
+  try {
+    const parsed = JSON.parse(toolResultJson) as { stdout?: unknown; stderr?: unknown };
+    return {
+      stdout: typeof parsed.stdout === "string" ? parsed.stdout : "",
+      stderr: typeof parsed.stderr === "string" ? parsed.stderr : "",
+    };
+  } catch {
+    return { stdout: "", stderr: "" };
+  }
+}
+
 export function parseExecutedCommand(args: Record<string, unknown>): string {
   return String(args.command ?? "").trim();
 }

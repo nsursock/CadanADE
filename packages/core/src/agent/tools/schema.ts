@@ -127,6 +127,38 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
   {
     type: "function",
     function: {
+      name: "update_ledger",
+      description:
+        "Record progress on one line of the requirements ledger. Evidence quotes are matched against real tool output from this turn and rejected if invented. Use status 'deviation' with a reason when a required tool, library or feature cannot work here — never substitute silently.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Ledger id from the checklist, e.g. R3." },
+          status: { type: "string", enum: ["done", "deviation", "todo"] },
+          note: {
+            type: "string",
+            description: "Required for 'deviation': what could not work and what you did instead.",
+          },
+          evidence: {
+            type: "object",
+            description: "Proof this line holds, copied verbatim from output you produced this turn.",
+            properties: {
+              command: { type: "string", description: "The command you ran that produced the evidence." },
+              quote: {
+                type: "string",
+                description: "At least 12 characters copied verbatim from that command's output.",
+              },
+            },
+            required: ["quote"],
+          },
+        },
+        required: ["id", "status"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "web_search",
       description:
         "Search the web using a search engine. Returns a list of results with titles, URLs, and snippets.",
@@ -160,3 +192,10 @@ export const TOOL_SCHEMAS: ProviderTool[] = [
 ];
 
 export const APPROVAL_REQUIRED = new Set(["delete_file"]);
+
+export const LEDGER_TOOL = "update_ledger";
+
+/** Tool list for a turn, minus ledger bookkeeping when there is no ledger. */
+export function toolSchemasFor(hasLedger: boolean): ProviderTool[] {
+  return hasLedger ? TOOL_SCHEMAS : TOOL_SCHEMAS.filter((t) => t.function.name !== LEDGER_TOOL);
+}

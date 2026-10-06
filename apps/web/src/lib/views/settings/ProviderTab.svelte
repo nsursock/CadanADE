@@ -10,6 +10,7 @@
     loadSettings,
     patchSettings,
     clampMaxTokens,
+    clampPromptBudgetTokens,
     type AgentMode,
   } from "@cadan/core";
   import { appState } from "$lib/state.svelte";
@@ -21,6 +22,7 @@
   let workerModel = $state(DEFAULT_SETTINGS.workerModelId);
   let agentMode = $state<AgentMode>(DEFAULT_SETTINGS.agentMode);
   let maxTokens = $state(DEFAULT_SETTINGS.maxTokens);
+  let promptBudgetTokens = $state(DEFAULT_SETTINGS.promptBudgetTokens);
   let showKey = $state(false);
   let saving = $state(false);
   let saved = $state(false);
@@ -39,6 +41,7 @@
     workerModel = s.workerModelId || DEFAULT_SETTINGS.workerModelId;
     agentMode = s.agentMode === "thrift" ? "thrift" : "normal";
     maxTokens = clampMaxTokens(s.maxTokens);
+    promptBudgetTokens = clampPromptBudgetTokens(s.promptBudgetTokens);
     void hydrateServer();
   });
 
@@ -51,6 +54,9 @@
       if (data.workerModel) workerModel = data.workerModel;
       if (data.agentMode === "thrift" || data.agentMode === "normal") agentMode = data.agentMode;
       if (data.maxTokens != null) maxTokens = clampMaxTokens(data.maxTokens);
+      if (data.promptBudgetTokens != null) {
+        promptBudgetTokens = clampPromptBudgetTokens(data.promptBudgetTokens);
+      }
       keyHint = data.keyHint ?? null;
       hasKey = Boolean(data.hasKey);
       if (hasKey) void loadModels();
@@ -99,6 +105,7 @@
       const nextModel = model.trim() || DEFAULT_SETTINGS.selectedModelId;
       const nextWorker = workerModel.trim() || DEFAULT_SETTINGS.workerModelId;
       const nextMax = clampMaxTokens(maxTokens);
+      const nextBudget = clampPromptBudgetTokens(promptBudgetTokens);
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,6 +116,7 @@
           workerModel: nextWorker,
           agentMode,
           maxTokens: nextMax,
+          promptBudgetTokens: nextBudget,
         }),
       });
       const data = await res.json();
@@ -116,6 +124,8 @@
       model = nextModel;
       workerModel = nextWorker;
       maxTokens = typeof data.maxTokens === "number" ? data.maxTokens : nextMax;
+      promptBudgetTokens =
+        typeof data.promptBudgetTokens === "number" ? data.promptBudgetTokens : nextBudget;
       patchSettings({
         openrouterApiKey: apiKey,
         providerBaseUrl: baseUrl,
@@ -123,6 +133,7 @@
         workerModelId: nextWorker,
         agentMode,
         maxTokens,
+        promptBudgetTokens,
       });
       appState.selectedModelId = nextModel;
       appState.workerModelId = nextWorker;
@@ -304,6 +315,22 @@
       />
       <p class="text-[0.65rem] text-scifi-muted mt-1">
         Completion budget per model call (default 4096). Raise if responses truncate mid-edit; lower to curb thrash.
+      </p>
+    </label>
+
+    <label class="block mb-3">
+      <span class="label-kicker block mb-1">Prompt budget</span>
+      <input
+        class="input font-mono text-xs"
+        type="number"
+        min="4000"
+        max="1000000"
+        step="1000"
+        bind:value={promptBudgetTokens}
+      />
+      <p class="text-[0.65rem] text-scifi-muted mt-1">
+        How much history the model sees (default 24,000 tokens). Older tool results and reasoning are
+        trimmed to fit. Lower it for small-context models; a context overflow retries at a reduced budget.
       </p>
     </label>
 

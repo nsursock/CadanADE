@@ -83,3 +83,37 @@ export interface FilePayload {
   content: string;
   hash: string;
 }
+
+/** Token usage for a single turn. */
+export interface TurnUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  agentMode: string;
+  finishReason?: string;
+  maxTokens?: number;
+  /** Configured model id (e.g. openrouter/free). */
+  model?: string;
+  /** Actual model OpenRouter served. */
+  routedModel?: string;
+}
+
+/** Cumulative token usage for a chat session. */
+export interface SessionUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  turns: number;
+}
+
+/** Harness verdict for the turn — the agent's own completion claim is not evidence. */
+export interface Verification {
+  verdict: "pass" | "deviations" | "fail";
+  summary: string;
+  report: string;
+  blockers: number;
+  warnings: number;
+  ledgerPath: string;
+}

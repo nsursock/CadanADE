@@ -1,5 +1,5 @@
 import type { AgentMode } from "@cadan/core";
-import { clampMaxTokens, DEFAULT_SETTINGS } from "@cadan/core";
+import { clampMaxTokens, clampPromptBudgetTokens, DEFAULT_SETTINGS } from "@cadan/core";
 import { clampMaxIterations, DEFAULT_MAX_ITERATIONS } from "@cadan/core/server";
 
 /** In-memory provider config for the Node process (UI Save overrides env). */
@@ -10,6 +10,8 @@ export interface ProviderConfig {
   workerModel: string;
   agentMode: AgentMode;
   maxTokens: number;
+  /** Prompt budget; older history is trimmed to fit before each model call. */
+  promptBudgetTokens: number;
   /** Model calls per step budget segment before the agent auto-continues. */
   maxIterations: number;
 }
@@ -22,6 +24,11 @@ const DEFAULT_MODE: AgentMode =
 const DEFAULT_MAX_TOKENS = clampMaxTokens(
   process.env.CADAN_MAX_TOKENS ? Number(process.env.CADAN_MAX_TOKENS) : DEFAULT_SETTINGS.maxTokens,
 );
+const DEFAULT_PROMPT_BUDGET = clampPromptBudgetTokens(
+  process.env.CADAN_PROMPT_BUDGET_TOKENS
+    ? Number(process.env.CADAN_PROMPT_BUDGET_TOKENS)
+    : DEFAULT_SETTINGS.promptBudgetTokens,
+);
 const DEFAULT_MAX_ITERATIONS_CFG = clampMaxIterations(
   process.env.CADAN_MAX_ITERATIONS ? Number(process.env.CADAN_MAX_ITERATIONS) : DEFAULT_MAX_ITERATIONS,
 );
@@ -33,6 +40,7 @@ let config: ProviderConfig = {
   workerModel: DEFAULT_WORKER,
   agentMode: DEFAULT_MODE,
   maxTokens: DEFAULT_MAX_TOKENS,
+  promptBudgetTokens: DEFAULT_PROMPT_BUDGET,
   maxIterations: DEFAULT_MAX_ITERATIONS_CFG,
 };
 
@@ -55,6 +63,10 @@ export function updateProviderConfig(partial: Partial<ProviderConfig>) {
         : config.agentMode,
     maxTokens:
       partial.maxTokens !== undefined ? clampMaxTokens(partial.maxTokens) : config.maxTokens,
+    promptBudgetTokens:
+      partial.promptBudgetTokens !== undefined
+        ? clampPromptBudgetTokens(partial.promptBudgetTokens)
+        : config.promptBudgetTokens,
     maxIterations:
       partial.maxIterations !== undefined
         ? clampMaxIterations(partial.maxIterations)

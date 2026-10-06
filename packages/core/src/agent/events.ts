@@ -8,6 +8,7 @@ export type AgentEventType =
   | "tool.error"
   | "tool.approval_required"
   | "change.pending"
+  | "verify"
   | "done"
   | "error"
   | "cancelled"
